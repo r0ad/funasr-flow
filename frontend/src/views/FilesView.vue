@@ -55,18 +55,10 @@
             @input="onSearchInput"
           />
         </div>
-        <button class="btn" :disabled="uploading" @click="pickFiles">
-          <Icon name="upload" :size="15" />
-          {{ uploading ? `上传中 ${uploadPct}%` : '上传录音' }}
+        <button class="btn primary" @click="openImport">
+          <Icon name="folder" :size="15" />
+          导入录音
         </button>
-        <input
-          ref="fileInput"
-          type="file"
-          accept="audio/*,.m4a,.mp3,.wav,.amr,.aac,.flac,.ogg,.opus,.wma,.mp4,.3gp,.m4b,.webm"
-          multiple
-          class="vh"
-          @change="onPick"
-        />
       </div>
 
       <!-- 上传队列 -->
@@ -117,16 +109,14 @@
         <div class="art"><Icon name="files" :size="26" /></div>
         <h3>还没有录音</h3>
         <p class="hint">
-          上传单个文件、直接拖进来，或者从手机备份目录整批导入。导入的音频会复制进资料库，
-          之后换目录、重启都不影响已有文字稿。
+          选一个文件夹（或几个文件）就行，浏览器直接读你电脑上的音频并上传，服务器不需要
+          访问你的磁盘。导入的音频会复制进资料库，之后重启、换机器都不影响已有文字稿。
         </p>
         <div class="row" style="justify-content: center; gap: 8px; margin-top: 16px">
-          <button class="btn primary" @click="pickFiles">
-            <Icon name="upload" :size="15" /> 上传录音
+          <button class="btn primary" @click="openImport">
+            <Icon name="folder" :size="15" /> 导入录音
           </button>
-          <button class="btn" @click="openImport">
-            <Icon name="folder" :size="15" /> 导入目录
-          </button>
+          <span class="small muted" style="align-self: center">也可以直接把音频拖进来</span>
         </div>
       </div>
 
@@ -284,15 +274,9 @@ const offset = ref(0)
 const loading = ref(false)
 const selected = ref(new Set())
 const exportFmt = ref('txt')
-const fileInput = ref(null)
 const dragging = ref(false)
 const uploads = ref([]) // {name, pct, status: 'uploading'|'done'|'error', error}
 const uploading = ref(false)
-const uploadPct = computed(() => {
-  const list = uploads.value.filter((u) => u.status === 'uploading')
-  if (!list.length) return 100
-  return Math.round(list.reduce((a, u) => a + u.pct, 0) / list.length)
-})
 
 const TABS = [
   { key: 'all', label: '全部' },
@@ -475,23 +459,12 @@ async function scanNow() {
   }
 }
 
-// ---- 上传 ----
-function pickFiles() {
-  // 用隐藏 input 触发系统选择框；不用 hidden 属性，避免个别浏览器忽略 click()
-  fileInput.value?.click()
-}
-
+// ---- 拖拽上传 ----
 let uploadHideTimer = null
 
 function dismissUploads() {
   clearTimeout(uploadHideTimer)
   uploads.value = []
-}
-
-function onPick(e) {
-  const files = [...(e.target.files || [])]
-  e.target.value = ''
-  if (files.length) uploadAll(files)
 }
 
 let dragDepth = 0

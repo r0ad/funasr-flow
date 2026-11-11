@@ -460,6 +460,12 @@ input[type='checkbox'].cb {
   border-radius: 5px;
 }
 
+/* visually hidden：文件选择框等需要被 JS 点击但不应显示的元素 */
+.vh {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 /* ------------------------------------------------------------------ 进度 */
 .bar { height: 6px; border-radius: 99px; background: var(--panel-3); overflow: hidden; }
 .bar > span {

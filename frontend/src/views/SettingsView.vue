@@ -57,8 +57,8 @@
             <b>{{ lib ? fmtBytes(lib.bytes) : '—' }}</b>
           </span>
           <span class="spacer" />
-          <button class="btn" @click="browserOpen = true">
-            <Icon name="folder" :size="15" /> 导入目录…
+          <button class="btn primary" @click="openImport">
+            <Icon name="folder" :size="15" /> 导入录音
           </button>
           <button class="btn ghost" :disabled="importing" @click="rescanLibrary">
             <Icon name="refresh" :size="14" /> 重新扫描资料库
@@ -83,26 +83,11 @@
         </div>
 
         <p class="hint" style="margin: 0">
-          导入会把音频<b>复制</b>进资料库（<code>data/library</code>，Docker 里是 <code>/data</code> 卷），
-          数据库只记资料库里的路径。所以换挂载目录、重启容器、甚至把原始文件夹删掉，都不影响已有录音和文字稿。
+          音频由浏览器读取你电脑上的文件后上传，<b>复制</b>进资料库（<code>data/library</code>，
+          Docker 里是 <code>/data</code> 卷）。数据库只记资料库里的路径，所以重启容器、换机器、
+          甚至把原始文件夹删掉，都不影响已有录音和文字稿。服务器不需要访问你的磁盘。
         </p>
 
-        <div class="field">
-          <label>自动导入目录</label>
-          <div class="row">
-            <input v-model="form.input_dir" class="input mono" style="flex: 1" />
-            <button class="btn" @click="browserOpen = true">
-              <Icon name="browse" :size="15" /> 浏览…
-            </button>
-            <button class="btn primary" :disabled="importing" @click="changeDir">
-              <Icon name="download" :size="15" /> 导入这个目录
-            </button>
-          </div>
-          <span class="hint">
-            手机备份目录即可。开了「定时导入」后，这个目录里的新录音会被自动复制进资料库；
-            原始文件只读，不会被修改。
-          </span>
-        </div>
       </div>
     </div>
 
@@ -247,18 +232,10 @@
       所有数据都在本机：音频复制进资料库，转写结果存在 <code>data/flow.db</code>，模型缓存在 <code>.cache/</code>。
     </p>
   </div>
-
-  <DirPicker
-    :open="browserOpen"
-    :start="form.input_dir"
-    @close="browserOpen = false"
-    @picked="onDirPicked"
-  />
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import DirPicker from '../components/DirPicker.vue'
 import Icon from '../components/Icon.vue'
 import { api } from '../api'
 import { fmtBytes, refreshHealth, refreshStats, store, toast } from '../store'
@@ -267,7 +244,6 @@ const settings = ref(null)
 const form = reactive({})
 const saving = ref(false)
 const health = computed(() => store.health)
-const browserOpen = ref(false)
 const lib = ref(null)
 const importing = computed(() => !!store.live?.import?.running)
 const imp = computed(() => store.live?.import || null)
@@ -340,21 +316,8 @@ function reset() {
   for (const k of Object.keys(settings.value)) form[k] = settings.value[k]
 }
 
-function onDirPicked(path) {
-  form.input_dir = path
-  reload()
-}
-
-async function changeDir() {
-  try {
-    await api.saveSettings({ input_dir: form.input_dir })
-    const res = await api.importDir(form.input_dir)
-    if (res.importing) toast('开始导入，进度见右下角', 'ok')
-    await reload()
-    store.reloadTick++
-  } catch (e) {
-    toast(e.message, 'err')
-  }
+function openImport() {
+  store.ui.importOpen = true
 }
 
 async function cancelQueued() {

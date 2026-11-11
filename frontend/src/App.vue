@@ -65,14 +65,14 @@
 
     <ProgressDock />
     <Toasts />
-    <DirPicker :open="pickerOpen" @close="pickerOpen = false" @picked="onDirPicked" />
+    <FolderImport :open="pickerOpen" @close="pickerOpen = false" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import DirPicker from './components/DirPicker.vue'
+import FolderImport from './components/FolderImport.vue'
 import Icon from './components/Icon.vue'
 import ProgressDock from './components/ProgressDock.vue'
 import Toasts from './components/Toasts.vue'
@@ -133,11 +133,6 @@ const connText = computed(() =>
 const connColor = computed(() =>
   store.connection === 'online' ? 'var(--ok)' : store.connection === 'offline' ? 'var(--err)' : 'var(--warn)',
 )
-
-function onDirPicked() {
-  refreshStats()
-  store.reloadTick++
-}
 
 onMounted(() => {
   refreshHealth()

@@ -65,6 +65,24 @@ async def upload(request: Request, name: str = Query(..., description="原始文
         target.unlink(missing_ok=True)
         raise HTTPException(400, "空文件")
 
+    # 同名同大小视为同一条录音：丢掉刚写的副本，直接跳过（浏览器整文件夹重传时常见）
+    dup = (
+        get_conn()
+        .execute(
+            "SELECT * FROM files WHERE name=? AND size=? AND status != 'missing' ORDER BY id LIMIT 1",
+            (filename, size),
+        )
+        .fetchone()
+    )
+    if dup is not None:
+        target.unlink(missing_ok=True)
+        has_tr = bool(
+            get_conn()
+            .execute("SELECT 1 FROM transcripts WHERE file_id=? LIMIT 1", (dup["id"],))
+            .fetchone()
+        )
+        return {"ok": True, "skipped": True, "file": file_dict(dup, has_transcript=has_tr)}
+
     rel = str(target.resolve())
     now = time.time()
     with tx() as c:

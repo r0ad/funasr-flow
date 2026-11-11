@@ -90,7 +90,7 @@ def scan(root_dir: str) -> dict:
                 continue
             if int(old["size"]) != int(size) or abs(float(old["mtime"]) - float(mtime)) > 1:
                 c.execute(
-                    "UPDATE files SET size=?, mtime=?, status='idle', error=NULL, updated_at=CURRENT_TIMESTAMP "
+                    "UPDATE files SET size=?, mtime=?, status='idle', error=NULL, updated_at=datetime('now','localtime') "
                     "WHERE id=?",
                     (size, mtime, old["id"]),
                 )

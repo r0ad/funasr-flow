@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS files (
   duration    REAL,
   status      TEXT NOT NULL DEFAULT 'idle',
   error       TEXT,
-  created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  updated_at  TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   error           TEXT,
   options         TEXT,
-  queued_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+  queued_at       TEXT DEFAULT (datetime('now','localtime')),
   started_at      TEXT,
   finished_at     TEXT
 );
@@ -65,8 +65,8 @@ CREATE TABLE IF NOT EXISTS transcripts (
   model       TEXT,
   language    TEXT DEFAULT 'zh',
   asr_ms      INTEGER,
-  created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  updated_at  TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS segments (
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS speakers (
   color       TEXT,
   embedding   BLOB,
   notes       TEXT,
-  created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at  TEXT DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS file_speakers (

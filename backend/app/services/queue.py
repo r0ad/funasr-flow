@@ -34,7 +34,7 @@ def enqueue(file_ids: Iterable[int], options: dict[str, Any] | None = None) -> d
             cur = c.execute("INSERT INTO jobs(file_id, options) VALUES(?,?)", (fid, opts))
             job_ids.append(cur.lastrowid)
             c.execute(
-                "UPDATE files SET status='queued', error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE files SET status='queued', error=NULL, updated_at=datetime('now','localtime') WHERE id=?",
                 (fid,),
             )
             queued += 1
@@ -56,11 +56,11 @@ def claim_next() -> dict | None:
             return None
         conn.execute(
             "UPDATE jobs SET status='running', stage='start', progress=0.0, "
-            "started_at=CURRENT_TIMESTAMP, attempts=attempts+1, cancel_requested=0 WHERE id=?",
+            "started_at=datetime('now','localtime'), attempts=attempts+1, cancel_requested=0 WHERE id=?",
             (row["job_id"],),
         )
         conn.execute(
-            "UPDATE files SET status='running', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE files SET status='running', updated_at=datetime('now','localtime') WHERE id=?",
             (row["file_id"],),
         )
         conn.execute("COMMIT")
@@ -85,7 +85,7 @@ def request_cancel(job_id: int) -> bool:
             return False
         if job["status"] == "queued":
             c.execute(
-                "UPDATE jobs SET status='canceled', finished_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE jobs SET status='canceled', finished_at=datetime('now','localtime') WHERE id=?",
                 (job_id,),
             )
             c.execute(
@@ -104,7 +104,7 @@ def cancel_queued() -> int:
         rows = c.execute("SELECT id, file_id FROM jobs WHERE status='queued'").fetchall()
         for r in rows:
             c.execute(
-                "UPDATE jobs SET status='canceled', finished_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE jobs SET status='canceled', finished_at=datetime('now','localtime') WHERE id=?",
                 (r["id"],),
             )
             c.execute("UPDATE files SET status='idle' WHERE id=?", (r["file_id"],))
@@ -118,11 +118,11 @@ def mark_failed(job_id: int, error: str, canceled: bool = False) -> None:
             return
         status = "canceled" if canceled else "failed"
         c.execute(
-            "UPDATE jobs SET status=?, error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE jobs SET status=?, error=?, finished_at=datetime('now','localtime') WHERE id=?",
             (status, str(error)[:2000], job_id),
         )
         c.execute(
-            "UPDATE files SET status=?, error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE files SET status=?, error=?, updated_at=datetime('now','localtime') WHERE id=?",
             (
                 "idle" if canceled else "failed",
                 None if canceled else str(error)[:2000],

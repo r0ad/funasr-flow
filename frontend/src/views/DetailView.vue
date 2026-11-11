@@ -106,7 +106,7 @@
           </div>
           <div class="card-pad" style="padding: 12px">
             <div v-for="s in speakers" :key="s.cluster" class="speaker-card">
-              <span class="avatar" :style="{ background: s.color }">{{ initial(s.name) }}</span>
+              <span class="avatar" :style="{ background: s.color }">{{ initial(s.name, s.cluster) }}</span>
               <div class="who">
                 <div class="row" style="gap: 6px">
                   <input
@@ -262,9 +262,12 @@ const visibleSegments = computed(() =>
   filterCluster.value ? segments.value.filter((s) => s.speaker === filterCluster.value) : segments.value,
 )
 
-function initial(name) {
+function initial(name, cluster) {
   const t = String(name || '').trim()
-  if (!t) return '?'
+  // 默认名字「说话人2」用序号更好认，别都显示一个「说」
+  const auto = /^说话人(\d+)$/.exec(t)
+  if (auto) return auto[1]
+  if (!t) return cluster ? String(cluster).replace(/\D/g, '') || '?' : '?'
   // 中文取第一个字，英文取首字母
   return /[a-zA-Z]/.test(t[0]) ? t[0].toUpperCase() : t[0]
 }

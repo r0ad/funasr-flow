@@ -87,15 +87,19 @@ docs/                 architecture / api / models / llm-usage
   经 `GET /api/state` 的 `import` 与 `GET /api/files/library` 暴露；重复触发返回 409，取消走
   `POST /api/files/import/cancel`（协作式，处理下一个文件前停）。单个坏文件只计 `failed`，不中断整批。
   注意 `added` 包含被覆盖的文件，`replaced` 是其中被覆盖的数量。导入目录若就在资料库里，等价于重扫（不复制、不产生 ` (2)` 副本）。
-- **浏览目录不限制范围**：`GET /api/browse` 直接列本机文件系统（这是本地单机工具的定位），
-  只挡无权限（403）和非法路径（400）；Windows 盘符靠 `_roots()` 枚举，POSIX 给 `/` 和 `~`。
+- **音频进资料库只有两条路**：① 浏览器选文件夹/文件（`components/FolderImport.vue`，读本机文件后
+  `POST /api/files/upload` 原始字节上传，`showDirectoryPicker` 不可用时退回 `<input webkitdirectory>`，
+  **只取所选目录这一层**，不进子目录）；② 服务器端 `POST /api/files/scan {"dir":…}`（给 CLI / 脚本 / 定时导入用）。
+  界面不再让用户选服务器路径——Docker 里没有挂载也能工作，`GET /api/browse` 仅保留给 CLI / agent 用，
+  只挡无权限（403）和非法路径（400）。
 - **Docker 默认零挂载，音频走 HTTP 进来**：`docker-compose.yml` 用命名卷 `flow-data:/data` + `flow-cache:/cache`，
   不挂任何宿主机目录；音频由网页上传（XHR → `data/library`）。`- ./data:/data` 只是可选项（想在本机文件夹里看到数据
   或直接往 `data/library` 拷文件时用）。别把「挂载宿主机录音目录」写成必需步骤——整盘 `-v "D:/:/host/d:ro"` 属高级用法。
 - **SQLite 要能在绑定盘上跑**：`db._set_journal_mode()` 先试 WAL，失败（Windows bind mount / 网络盘没有共享内存）
   就退回 `journal_mode=DELETE` 并 warning 一次；不要假设 WAL 一定可用，也不要把 PRAGMA 写回 `SCHEMA` 里。
 - **容器里只能浏览挂载点**：`api/system.py` 用 `/.dockerenv` 判断 Docker，把 `/media`、`/mnt`、`/data` 和整盘约定
-  `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint` 给 DirPicker 显示说明与命令生成。
+  `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint`。这是给 CLI/agent 的兜底；
+  界面上传路径不需要任何挂载，别把「挂载宿主机目录」做成使用前提。
 - **容器 GPU 要 cu121 构建 + `--gpus all`**：`Dockerfile` 的 `ARG TORCH_INDEX_URL` 默认是 CPU 版；要 GPU 用
   `docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .`，运行加 `--gpus all`。
   宿主机需 NVIDIA 驱动 + Container Toolkit，先跑
@@ -136,3 +140,52 @@ docs/                 architecture / api / models / llm-usage
 - Conventional Commits：`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`，首行 ≤ 72 字符，中文正文可以。
 - 一个 PR 一件事；涉及 UI 的附截图，涉及识别的附前后对比样例。
 - 发布：`v*` tag 触发 `.github/workflows/release.yml`（build + twine check + GitHub Release）；镜像见 `Dockerfile`。
+
+## 构建与发布
+
+前端产物 `frontend/dist` **提交进仓库**（用户 clone 后不必装 Node 就能开界面），改动前端后必须重建：
+
+```bash
+cd frontend && npm run build      # 产物直接覆盖 frontend/dist
+```
+
+镜像（CPU / GPU 两套 tag，同一 Dockerfile）：
+
+```bash
+docker build -t funasr-flow:latest -t sunzroad/funasr-flow:0.1.0 .            # CPU（默认 torch cpu 索引）
+docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+  -t funasr-flow:cu121 -t sunzroad/funasr-flow:0.1.0-gpu .                    # GPU
+```
+
+- `ARG TORCH_INDEX_URL` 在 `runtime` stage **必须重新声明**（全局 ARG 只在 `FROM` 行可见），否则 pip 会把 `torch` 当 index-url，报 `Could not find a version that satisfies the requirement torchaudio`。
+- `Dockerfile` 的 `COPY` 必须包含 `pyproject.toml run.py README.md LICENSE llms.txt`（`readme=` 与 `license-files=["LICENSE"]` 都要在镜像里）。
+- compose：`docker-compose.yml`（命名卷 `flow-data`/`flow-cache`，端口 8000，零挂载）＋ `docker-compose.gpu.yml`（换 cu121 镜像 + `deploy.resources.reservations.devices`）。校验 `docker compose config --quiet`。
+- 发布：`v*` tag 触发 `.github/workflows/release.yml`（`python -m build` + `twine check` + GitHub Release）。
+- 容器里排查：`docker logs <name>`；GPU 是否生效看 `GET /api/health` 的 `gpu.available` 与 `gpu.hint`。
+
+## 配置项（`DEFAULT_SETTINGS`）
+
+改默认值只改 `backend/app/config.py`；运行时可用设置页或 `PATCH /api/settings`（键名/类型会被校验）。
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `input_dir` | `CallRecord/` | 自动导入目录（CLI/定时导入用；浏览器导入不需要它） |
+| `device` | `cuda:0` | 无 CUDA 自动回退 CPU |
+| `asr_model` / `vad_model` / `punc_model` / `spk_model` | `paraformer-zh` / `fsmn-vad` / `ct-punc` / `cam++` | 模型别名，见 `docs/models.md` |
+| `hotwords` | 一串亲属称呼 | 空格分隔，无权重语法；只对 SeACo 系模型生效 |
+| `spk_num` | 0 | 0=自动估计人数；2=强制双人 |
+| `batch_size_s` | 300 | 单批音频秒数 |
+| `auto_map_speakers` | true | 用声纹库自动套名字 |
+| `min_speaker_sim` | 0.62 | 声纹匹配阈值 |
+| `merge_threshold` | 0.72 | 同一人被拆两簇的合并阈值 |
+| `absorb_threshold` / `absorb_max_seconds` | 0.45 / 6.0 | 碎片簇吸收（≤3 句且累计 ≤6s 才可能被并） |
+| `ingest_mode` | `copy` | `copy`=复制进资料库；`link`=硬链接（同盘才生效） |
+| `keep_wav` | false | 保留转码后的 16k wav |
+| `auto_scan_minutes` | 0 | 0=关闭定时导入 |
+| `concurrency` | 1 | GPU 串行，**不要改** |
+
+## README 与本文档的分工
+
+`README.md` 只面向使用者（三步跑起来、怎么用、常见问题），不放开发细节。构建、发布、配置项、目录结构、
+领域规则、代码约定、边界（Always/Ask first/Never）全部写在本文档里；接口细节在 `docs/api.md`，
+设计取舍在 `docs/architecture.md`。

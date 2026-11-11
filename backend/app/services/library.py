@@ -146,7 +146,7 @@ def import_one(src: Path, mode: str = "copy") -> dict:
         if old is not None:
             c.execute(
                 "UPDATE files SET rel_path=?, name=?, ext=?, size=?, mtime=?, status='idle', "
-                "error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "error=NULL, updated_at=datetime('now','localtime') WHERE id=?",
                 (rel, target.name, target.suffix.lower(), st.st_size, st.st_mtime, old["id"]),
             )
             c.execute("DELETE FROM transcripts WHERE file_id=?", (old["id"],))

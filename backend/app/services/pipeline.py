@@ -476,12 +476,12 @@ def _save_result(
 
         c.execute(
             "UPDATE files SET status='done', duration=?, error=NULL, "
-            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "updated_at=datetime('now','localtime') WHERE id=?",
             (duration, file_row["id"]),
         )
         c.execute(
             "UPDATE jobs SET status='done', progress=1.0, stage='done', "
-            "finished_at=CURRENT_TIMESTAMP WHERE id=?",
+            "finished_at=datetime('now','localtime') WHERE id=?",
             (job_id,),
         )
 
