@@ -33,7 +33,7 @@
               :key="d"
               class="chip"
               :class="{ on: drive === d }"
-              @click="drive = d"
+              @click="pickDrive(d)"
             >
               {{ d }}:
             </button>
@@ -227,6 +227,13 @@ function same(a, b) {
   return a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
 }
 
+// 点盘符：既切换生成命令用的盘，也直接跳进容器里对应的 /host/<盘符>
+function pickDrive(d) {
+  drive.value = d
+  const want = `/host/${d.toLowerCase()}`
+  if ((data.roots || []).some((r) => (r.path || '').toLowerCase() === want)) go(want)
+}
+
 async function go(path) {
   // 空字符串是有意义的：后端会回退到「当前录音目录」或第一个盘符
   if (path === null) return
@@ -236,6 +243,12 @@ async function go(path) {
     const res = await api.browse(path)
     Object.assign(data, res)
     manual.value = res.path
+    // 当前就在整盘挂载点里 → 让挂载方式与盘符跟着走，免得生成命令和看到的目录对不上
+    const m = /^\/host\/([a-z])(?=\/|$)/i.exec(res.path || '')
+    if (m) {
+      mountMode.value = 'drive'
+      drive.value = m[1].toUpperCase()
+    }
   } catch (e) {
     error.value = e.message
   } finally {

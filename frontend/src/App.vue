@@ -68,10 +68,10 @@ const pickerOpen = ref(false)
 const nav = computed(() => {
   const pending = store.live?.queue?.queued || 0
   return [
-    { to: '/', label: '录音库', icon: 'files' },
+    { to: '/', label: '录音库', icon: 'files', badge: pending || null },
     { to: '/search', label: '全文搜索', icon: 'search' },
     { to: '/speakers', label: '声纹库', icon: 'users' },
-    { to: '/settings', label: '设置', icon: 'settings', badge: pending || null },
+    { to: '/settings', label: '设置', icon: 'settings' },
   ]
 })
 
