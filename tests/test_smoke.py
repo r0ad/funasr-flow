@@ -334,8 +334,10 @@ def test_fastapi_app_imports_without_asr_extras() -> None:
     from backend.app.main import app
 
     assert app.title == "FunASR Flow"
-    paths = {getattr(r, "path", "") for r in app.routes}
+    # 不要读 app.routes：新版 FastAPI 用 _IncludedRouter 延迟展开，元素没有 .path
+    paths = set(app.openapi()["paths"])
     assert "/api/health" in paths
+    assert "/api/files" in paths
 
 
 # --------------------------------------------------------------- 临时文件 / 迁移

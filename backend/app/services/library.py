@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -63,9 +64,13 @@ def is_in_library(path: str | Path) -> bool:
 
 
 def unique_target(name: str) -> Path:
-    """资料库里的目标路径：重名自动加 `` (2)``、`` (3)``。"""
+    """资料库里的目标路径：重名自动加 `` (2)``、`` (3)``。
+
+    只保留最后一段文件名（挡目录穿越）。这里**不能**用 ``Path(name).name``：在 Linux 上
+    反斜杠不是分隔符，``C:\\Users\\x\\rec.m4a`` 会被整串当成文件名（CI 上真踩过）。
+    """
     LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
-    safe = Path(name).name
+    safe = re.split(r"[\\/]", name.strip())[-1] or "audio"
     target = LIBRARY_DIR / safe
     n = 2
     while target.exists():
