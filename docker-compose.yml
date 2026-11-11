@@ -1,10 +1,15 @@
 # 本地 / 单机服务器部署（CPU 版镜像）。
 #
 # 首次使用：
-#   mkdir -p data cache CallRecord
-#   sudo chown -R 10001:10001 data cache      # 容器内以 uid 10001 的非 root 用户运行
+#   mkdir -p cache CallRecord
+#   sudo chown -R 10001:10001 cache           # 容器内以 uid 10001 的非 root 用户运行
 #   docker compose up -d --build
 #   open http://127.0.0.1:8000
+#
+# 为什么 SQLite 用命名卷而不是 ./data 绑定目录：
+#   SQLite 的 WAL 需要真正的本地文件系统。如果你的录音放在网络盘/虚拟盘（例如 Windows 的
+#   H: 映射盘）上，把 /data 绑定到那个盘会直接报 `sqlite3.OperationalError: disk I/O error`。
+#   所以数据库放命名卷，录音单独只读绑定到 /data/CallRecord —— 读文件没问题，写库留在卷里。
 #
 # 目录约定与 backend/app/config.py 保持一致：
 #   FLOW_DATA_DIR=/data   -> SQLite(data/flow.db) 与导出结果(/data/transcripts)
@@ -30,7 +35,7 @@ services:
       TZ: Asia/Shanghai
 
     volumes:
-      - ./data:/data
+      - flow-data:/data
       - ./cache:/cache
       # 原始录音只读挂载；镜像内 /app/CallRecord 是指向这里的软链接（Dockerfile 里创建），
       # 因此首次扫描的默认目录（DEFAULT_SETTINGS.input_dir）能直接命中这份录音。
@@ -59,3 +64,6 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
+
+volumes:
+  flow-data:

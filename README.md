@@ -132,6 +132,18 @@ docker compose up -d --build
 # 打开 http://127.0.0.1:8000
 ```
 
+> **数据库要放在卷里，不要绑定到网络盘。** SQLite 的 WAL 模式要求本地文件系统，把 `/data`
+> 绑定到 Windows 的映射盘（如 `H:`）会报 `sqlite3.OperationalError: disk I/O error`。`docker-compose.yml`
+> 因此用命名卷 `flow-data` 存数据库，只把录音目录只读绑进去：
+>
+> ```bash
+> docker volume create flow-data
+> docker run -d --name funasr-flow -p 8000:8000 \
+>   -v flow-data:/data \
+>   -v /path/to/CallRecord:/data/CallRecord:ro \
+>   sunzroad/funasr-flow:latest
+> ```
+
 镜像基于 CPU 版 PyTorch，适合跑通流程或小批量；GPU 需要把 `Dockerfile` 换成 CUDA 基镜像并打开 `docker-compose.yml` 里注释掉的 `deploy.resources` 段（见文件头部注释）。
 
 ## 目录结构
