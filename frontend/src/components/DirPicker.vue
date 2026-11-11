@@ -1,6 +1,30 @@
 <template>
   <Modal :open="open" title="选择录音目录" wide @close="emit('close')">
     <div class="picker">
+      <!-- 容器提示：只能看到挂载进来的目录 -->
+      <div v-if="data.container" class="docker-tip">
+        <div class="docker-tip-head">
+          <Icon name="box" :size="15" />
+          <b>正在 Docker 里运行</b>
+          <span class="small">只能浏览挂载进容器的目录：{{ mountNames || '（无）' }}</span>
+        </div>
+        <div class="docker-tip-body">
+          <div class="small">要把宿主机上别的目录挂进来，先停掉容器再用 -v 重启：</div>
+          <div class="docker-line">
+            <input
+              v-model="hostPath"
+              class="input mono docker-input"
+              placeholder="宿主机目录，如 D:\我的通话录音"
+            />
+            <select v-model="target" class="input docker-sel">
+              <option v-for="p in mountChoices" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <button class="btn sm" @click="copyCmd">复制命令</button>
+          </div>
+          <pre class="docker-cmd">{{ cmd }}</pre>
+        </div>
+      </div>
+
       <!-- 盘符 / 起点 -->
       <div class="picker-roots">
         <button
@@ -90,11 +114,52 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'picked'])
 
-const data = reactive({ path: '', parent: null, roots: [], entries: [], audio: 0 })
+const data = reactive({
+  path: '',
+  parent: null,
+  roots: [],
+  entries: [],
+  audio: 0,
+  container: false,
+  mounts: [],
+  image: '',
+  hint: '',
+})
 const manual = ref('')
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
+const hostPath = ref('')
+const target = ref('/media')
+
+// 容器内可选的挂载点：已存在的 + 常用的备用名
+const mountChoices = computed(() => {
+  const have = (data.mounts || []).map((m) => m.path)
+  const extra = ['/media', '/media2', '/mnt', '/recordings'].filter((p) => !have.includes(p))
+  return [...have, ...extra]
+})
+const mountNames = computed(() => (data.mounts || []).map((m) => m.path).join('、'))
+
+// 生成一条可直接粘贴的 docker run（数据/缓存用命名卷，录音目录只读挂载）
+const cmd = computed(() => {
+  const host = hostPath.value.trim() || 'D:\\我的通话录音'
+  return [
+    'docker rm -f funasr-flow',
+    `docker run -d --name funasr-flow -p 8000:8000 \\`,
+    `  -v funasr-data:/data -v funasr-cache:/cache \\`,
+    `  -v "${host}:${target.value}:ro" \\`,
+    `  ${data.image || 'sunzroad/funasr-flow:latest'}`,
+  ].join('\n')
+})
+
+async function copyCmd() {
+  try {
+    await navigator.clipboard.writeText(cmd.value)
+    toast('命令已复制，粘贴到终端执行后刷新页面', 'ok')
+  } catch {
+    toast('复制失败，请手动选中命令复制', 'err')
+  }
+}
 
 // 把绝对路径拆成可点的面包屑（Windows 盘符也当一段）
 const crumbs = computed(() => {

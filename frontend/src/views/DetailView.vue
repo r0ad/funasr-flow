@@ -45,8 +45,20 @@
     </div>
 
     <div v-if="!segments.length" class="card empty">
-      <h3>还没有转写结果</h3>
-      <p class="small">把这条录音加入队列，识别完成后自动出现在这里。</p>
+      <template v-if="file?.status === 'failed'">
+        <h3>转写失败</h3>
+        <p class="small">{{ file?.error || '这条录音没有转写成功，可以重新试一次。' }}</p>
+      </template>
+      <template v-else-if="file?.status === 'done'">
+        <h3>没有检测到语音</h3>
+        <p class="small">
+          这条录音已经跑过识别，但没有分出一句话（可能是静音、纯音乐，或者短到 VAD 都不分段）。
+        </p>
+      </template>
+      <template v-else>
+        <h3>还没有转写结果</h3>
+        <p class="small">把这条录音加入队列，识别完成后自动出现在这里。</p>
+      </template>
       <button class="btn primary" style="margin-top: 14px" @click="enqueue">
         <Icon name="zap" :size="15" /> 开始转写
       </button>

@@ -338,11 +338,13 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
         cancel_check()
 
         real_rtf = (time.time() - t0) / max(duration, 1.0)
-        set_metric("rtf_est", 0.7 * real_rtf + 0.3 * rtf)
+        # 几秒钟的片段算出来的 RTF 没有参考价值（模型加载/预热占大头），别污染全局估计
+        if duration >= 20:
+            set_metric("rtf_est", min(max(0.7 * real_rtf + 0.3 * rtf, 0.01), 5.0))
 
         if not result.utterances:
-            _save_result(job_id, file_row, cfg, result, {}, duration, time.time() - started)
-            return
+            # 空结果不是"转写成功"：多半是静音、纯音乐或短到 VAD 都不分段
+            raise RuntimeError("没有检测到语音：这条录音可能是静音、纯音乐或过短")
 
         # 3. 声纹质心 + 合并 + 映射
         set_progress("diarize", 0.94, "声纹匹配")

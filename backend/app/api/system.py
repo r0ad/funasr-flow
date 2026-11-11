@@ -33,6 +33,33 @@ class SettingsPatch(BaseModel):
     values: dict[str, Any]
 
 
+# ------------------------------------------------------------------ 容器探测
+# 容器里只能看到「挂载进来」的目录，界面上要把这件事讲清楚，别让用户以为程序坏了。
+CONTAINER_MOUNT_ROOTS = ("/media", "/mnt", "/recordings", "/audio", "/data")
+
+
+def in_container() -> bool:
+    """判断是不是跑在 Docker 里（/.dockerenv 在官方镜像里一定存在）。"""
+    if os.environ.get("FLOW_IN_DOCKER") == "1":
+        return True
+    return Path("/.dockerenv").exists()
+
+
+def container_mounts() -> list[dict]:
+    """容器里已经挂进来的媒体目录（约定挂到 /media、/mnt 之类）。"""
+    if not in_container():
+        return []
+    out: list[dict] = []
+    for base in CONTAINER_MOUNT_ROOTS:
+        p = Path(base)
+        try:
+            if p.is_dir():
+                out.append({"name": base, "path": base, "audio": _count_audio(p)})
+        except OSError:
+            continue
+    return out
+
+
 # ------------------------------------------------------------------ 目录浏览
 def _roots() -> list[dict]:
     """可选的起点：Windows 给盘符，其他系统给 / 和家目录。"""
@@ -117,6 +144,8 @@ def browse(path: str | None = None) -> dict:
     except OSError:
         parent = None
 
+    container = in_container()
+    mounts = container_mounts()
     return {
         "path": str(target),
         "parent": parent,
@@ -124,6 +153,16 @@ def browse(path: str | None = None) -> dict:
         "roots": roots,
         "entries": entries,
         "audio": _count_audio(target),
+        "container": container,
+        "mounts": mounts,
+        "image": os.environ.get("FLOW_IMAGE") or "sunzroad/funasr-flow:latest",
+        "hint": (
+            "容器里只能浏览已经挂载进来的目录（"
+            + "、".join(m["path"] for m in mounts)
+            + "）。要加别的宿主机目录，需要带 -v 参数重新启动容器。"
+            if container
+            else ""
+        ),
     }
 
 
@@ -177,6 +216,7 @@ def health() -> dict:
             "heartbeat_age": round(time.time() - beat, 1) if beat else None,
         },
         "ml": {"models": MODEL_CHOICES},
+        "container": in_container(),
     }
 
 
