@@ -69,9 +69,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 先拷依赖声明，利用层缓存。README.md 不是运行期必需文件（缺失时 setuptools 只警告），
-# 所以不 COPY，避免文档还没就绪时镜像构建失败。
-COPY pyproject.toml run.py ./
+# 先拷依赖声明，利用层缓存。LICENSE 必须拷（pyproject 的 license-files 指向它，
+# 缺失时 setuptools 会直接报错）；llms.txt 给 /llms.txt 路由用（缺失时有内联兜底）。
+COPY pyproject.toml run.py LICENSE llms.txt ./
 COPY backend ./backend
 
 # CPU 版 torch/torchaudio：先用 CPU 索引装好，后面 .[asr] 里的 torch>=2.1 已被满足，

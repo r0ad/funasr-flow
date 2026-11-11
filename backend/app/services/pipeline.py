@@ -73,6 +73,17 @@ def convert_to_wav(src: str, dst: str) -> None:
         raise RuntimeError(f"ffmpeg 转码失败: {(p.stderr or '')[-400:]}")
 
 
+def _wav_seconds(path: str) -> float:
+    """读 wav 时长（秒），用于识别空文件/坏文件。"""
+    try:
+        import soundfile as sf
+
+        info = sf.info(path)
+        return float(info.frames) / float(info.samplerate or 1)
+    except Exception:
+        return 0.0
+
+
 def _load_wav(path: str) -> tuple[np.ndarray, int]:
     import soundfile as sf
 
@@ -292,6 +303,8 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
         cancel_check()
         convert_to_wav(str(src), wav)
         cancel_check()
+        if duration <= 0.5 or _wav_seconds(wav) <= 0.5:
+            raise RuntimeError("音频为空或过短（<0.5 秒），已跳过")
 
         # 2. 识别（含说话人分离）
         set_progress("asr", 0.06, "加载模型")

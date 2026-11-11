@@ -67,7 +67,7 @@ docs/                 architecture / api / models / llm-usage
 - **说话人分离依赖 punc + 字符时间戳**：`spk_mode="punc_segment"` 需要 punc 模型且 ASR 带 timestamp，
   否则 FunASR 静默回退 `vad_segment`（电话录音里一句可长达 30s，归属会糊）。不要为了省内存关掉 punc。
 - **过聚类是常态，靠三步收拾**（`pipeline.merge_similar_clusters`）：高相似合并（`merge_threshold` 0.72）→
-  目标人数约束（设置 `spk_num`，0=自动）→ 碎片簇吸收（只有 ≤2 句、累计 ≤ `absorb_max_seconds` 且相似度
+  目标人数约束（设置 `spk_num`，0=自动）→ 碎片簇吸收（只有 ≤3 句、累计 ≤ `absorb_max_seconds` 且相似度
   ≥ `absorb_threshold` 的簇才会被吸收）。吸收刻意保守：宁可多留一个簇让用户在详情页「合并到…」手动收拾，
   也不能把只说了几句的真实说话人并进主说话人。
   实测 2 人通话会被 FunASR 切成 3 簇，第三簇往往只有 1–2 句噪声。

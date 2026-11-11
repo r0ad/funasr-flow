@@ -179,7 +179,7 @@ funasr-flow/
 | `min_speaker_sim` | `0.62` | 绑定已有声纹的最小余弦相似度，调高更保守 | 设置页「声纹匹配阈值」 |
 | `merge_threshold` | `0.72` | 两个说话人簇余弦 ≥ 此值就视为同一个人并合并 | 设置页暂未暴露，用 `PATCH /api/settings` |
 | `absorb_threshold` | `0.5` | 碎片簇被并入大簇的最低相似度 | 同上 |
-| `absorb_max_seconds` | `5.0` | 累计时长不超过此值（且 ≤2 句）才算碎片簇 | 同上 |
+| `absorb_max_seconds` | `6.0` | 累计时长不超过此值（且 ≤3 句）才算碎片簇 | 同上 |
 | `concurrency` | `1` | 并发任务数；当前实现固定单卡串行，此键暂不生效 | 留 `1`（见 `docs/architecture.md`） |
 | `keep_wav` | `false` | 是否保留转码后的 16 kHz 中间 wav（`data/`、`.cache/tmp/`） | 设置页 checkbox |
 | `auto_scan_minutes` | `0` | 定时自动扫描间隔（分钟），`0` 关闭；到点后台扫描一次 `input_dir`，新文件自动入库 | 留 `0` 手动扫描 |
@@ -272,7 +272,7 @@ funasr-flow mcp --server http://127.0.0.1:8000
 先确认 `ffmpeg -version` 能跑，且 `ffmpeg` 在 `PATH` 里（Windows 装完要重开终端）。微信的 `.silk` 语音不在支持列表内，需要先转成 wav/mp3。
 
 **说话人被拆得太碎（过聚类）？**
-先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`absorb_max_seconds` + `absorb_threshold`（默认 5.0 秒 / 0.5）把只有一两句的噪声簇吸收进大簇；
+先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`absorb_max_seconds` + `absorb_threshold`（默认 6.0 秒 / 0.5）把只有两三句的噪声簇吸收进大簇；
 多出来的说话人不影响识别，可以在详情页用「合并到…」手动并掉。`min_speaker_sim`（默认 0.62）只决定"是否套用声纹库里的名字"，不影响聚类。这几个键都能用 `PATCH /api/settings` 改，设置页目前只暴露了 `spk_num` 与 `min_speaker_sim`。
 
 **识别准确率不理想？**
