@@ -34,7 +34,7 @@
 ### Windows（PowerShell）
 
 ```powershell
-git clone https://github.com/your-name/funasr-flow.git
+git clone https://github.com/r0ad/funasr-flow.git
 cd funasr-flow
 
 py -3.11 -m venv .venv
@@ -54,7 +54,7 @@ funasr-flow doctor
 ### macOS / Linux（bash）
 
 ```bash
-git clone https://github.com/your-name/funasr-flow.git
+git clone https://github.com/r0ad/funasr-flow.git
 cd funasr-flow
 
 python3 -m venv .venv

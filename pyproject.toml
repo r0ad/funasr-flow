@@ -52,8 +52,8 @@ dev = [
 funasr-flow = "backend.app.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-name/funasr-flow"
-Issues = "https://github.com/your-name/funasr-flow/issues"
+Homepage = "https://github.com/r0ad/funasr-flow"
+Issues = "https://github.com/r0ad/funasr-flow/issues"
 
 [tool.setuptools.packages.find]
 include = ["backend*"]

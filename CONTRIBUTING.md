@@ -5,7 +5,7 @@
 ## 开发环境
 
 ```bash
-git clone https://github.com/your-name/funasr-flow.git
+git clone https://github.com/r0ad/funasr-flow.git
 cd funasr-flow
 python -m venv .venv
 source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
