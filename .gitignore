@@ -2,8 +2,8 @@
 CallRecord/
 data/
 outputs/
-dist/
 build/
+frontend/.vite/
 *.m4a
 *.mp3
 *.wav
@@ -35,8 +35,6 @@ htmlcov/
 
 # --- Node / 前端 ---
 node_modules/
-frontend/dist/
-frontend/.vite/
 *.log
 
 # --- 编辑器 / 系统 ---

@@ -277,6 +277,10 @@ funasr-flow mcp --server http://127.0.0.1:8000
 **识别准确率不理想？**
 通话录音常见 8 kHz、窄带、有回声，准确率天然低于近场录音。可尝试：把热词换成通话里高频的人名/地名（只对 `paraformer-zh` 生效）；对四川话换方言模型对比；校对时直接改句子，改动会写回数据库并参与导出。
 
+**`pip install` 之后打开网页是 404 / 没有界面？**
+仓库把构建好的 `frontend/dist` 一起提交了，源码仓库里直接 `python run.py` 一定有界面。用 `pip install funasr-flow`
+（非 editable）从 PyPI 装时不会带上网页资源，此时请用 Docker 镜像，或从源码 `pip install -e .` 后 `cd frontend && npm run build`。
+
 **数据会被上传吗？**
 不会。推理、聚类、存储全部在本机完成。唯一需要联网的是首次下载模型；之后可以把 `MODELSCOPE_CACHE` 指向已有缓存离线运行。`data/` 里有全部文字稿，注意别提交到公开仓库（`.gitignore` 已忽略）。
 

@@ -1,0 +1,10 @@
+include README.md LICENSE llms.txt AGENTS.md CONTRIBUTING.md
+include docs/*.md
+include run.py
+include pyproject.toml
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include frontend/src *.vue *.js *.css
+include frontend/index.html frontend/package.json frontend/vite.config.js
+recursive-include frontend/dist *
+global-exclude __pycache__ *.py[cod] .DS_Store
