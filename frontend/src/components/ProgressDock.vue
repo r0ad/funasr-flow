@@ -85,7 +85,7 @@ async function cancelAll() {
 <style scoped>
 .dock {
   position: fixed;
-  top: 70px;
+  bottom: 18px;
   right: 20px;
   width: 300px;
   padding: 11px 13px;

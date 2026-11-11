@@ -153,7 +153,7 @@ p { margin: 0; }
 .topbar-title { display: flex; flex-direction: column; }
 .topbar-title .sub { font-size: 12px; color: var(--muted); }
 
-.content { flex: 1; overflow: auto; padding: 20px 22px 96px; }
+.content { flex: 1; overflow: auto; padding: 20px 22px 132px; }
 .content.narrow { max-width: 1080px; margin: 0 auto; width: 100%; }
 
 /* --------------------------------------------------------------- 卡片 */

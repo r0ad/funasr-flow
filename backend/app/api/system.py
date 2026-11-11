@@ -185,7 +185,9 @@ def clear_finished() -> dict:
 def stats() -> dict:
     conn = get_conn()
     row = conn.execute(
-        """SELECT COUNT(*) files, COALESCE(SUM(duration),0) total_seconds,
+        """SELECT COUNT(*) files,
+                  COALESCE(SUM(duration),0) total_seconds,
+                  COALESCE(SUM(CASE WHEN status='done' THEN 1 ELSE 0 END),0) done_files,
                   COALESCE(SUM(CASE WHEN status='done' THEN duration ELSE 0 END),0) done_seconds
            FROM files"""
     ).fetchone()
@@ -197,6 +199,7 @@ def stats() -> dict:
     rtf = get_metric("rtf_est", 0.0)
     return {
         "files": row["files"],
+        "done_files": row["done_files"],
         "total_seconds": round(row["total_seconds"], 1),
         "done_seconds": round(row["done_seconds"], 1),
         "segments": seg["n"],

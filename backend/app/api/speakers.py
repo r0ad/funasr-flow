@@ -111,6 +111,21 @@ async def enroll_new(name: str = Query(...), request: Request = None) -> dict:
     return {"ok": True, "speaker_id": svc.upsert_speaker(name, emb, overwrite=True)}
 
 
+@router.post("/{speaker_id}/enroll-from-file")
+def enroll_existing_from_file(speaker_id: int, file_id: int, start_ms: int, end_ms: int) -> dict:
+    """用录音库里某条录音的一段音频，覆盖已有说话人的声纹。"""
+    if get_conn().execute("SELECT id FROM speakers WHERE id=?", (speaker_id,)).fetchone() is None:
+        raise HTTPException(404, "声纹不存在")
+    try:
+        emb = svc.slice_embedding(file_id, start_ms, end_ms)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(500, str(e)) from e
+    svc.set_speaker_embedding(speaker_id, emb)
+    return {"ok": True, "speaker_id": speaker_id}
+
+
 @router.post("/{speaker_id}/enroll")
 async def enroll_existing(speaker_id: int, request: Request) -> dict:
     row = get_conn().execute("SELECT name FROM speakers WHERE id=?", (speaker_id,)).fetchone()

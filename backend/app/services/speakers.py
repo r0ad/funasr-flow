@@ -135,9 +135,8 @@ def embed_slice(src: Path, start_ms: int, end_ms: int) -> np.ndarray:
         safe_unlink(tmp)
 
 
-def enroll_from_file_range(
-    file_id: int, start_ms: int, end_ms: int, name: str, overwrite: bool = False
-) -> int:
+def slice_embedding(file_id: int, start_ms: int, end_ms: int) -> np.ndarray:
+    """从录音库里某条录音的指定区间提取声纹。"""
     conn = get_conn()
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
@@ -145,5 +144,25 @@ def enroll_from_file_range(
     src = Path(str(get_setting("input_dir"))) / Path(row["rel_path"])
     if not src.exists():
         raise ValueError("源文件已丢失")
-    emb = embed_slice(src, start_ms, end_ms)
-    return upsert_speaker(name, emb, overwrite=overwrite)
+    return embed_slice(src, start_ms, end_ms)
+
+
+def enroll_from_file_range(
+    file_id: int, start_ms: int, end_ms: int, name: str, overwrite: bool = False
+) -> int:
+    return upsert_speaker(name, slice_embedding(file_id, start_ms, end_ms), overwrite=overwrite)
+
+
+def set_speaker_embedding(speaker_id: int, embedding: bytes | np.ndarray) -> None:
+    """覆盖已有说话人的声纹（不改名、不新建）。"""
+    blob = (
+        normalize(
+            np.frombuffer(embedding, dtype=np.float32)
+            if isinstance(embedding, bytes)
+            else embedding
+        )
+        .astype(np.float32)
+        .tobytes()
+    )
+    with tx() as c:
+        c.execute("UPDATE speakers SET embedding=? WHERE id=?", (blob, speaker_id))

@@ -43,6 +43,7 @@
 | POST | `/api/speakers/from-file` | 从录音的时间区间提取声纹 |
 | POST | `/api/speakers/enroll` | 上传音频登记声纹（原始 body） |
 | POST | `/api/speakers/{speaker_id}/enroll` | 同上，登记到指定人物 |
+| POST | `/api/speakers/{speaker_id}/enroll-from-file` | 从录音时间区间覆盖指定人物的声纹 |
 | POST | `/api/speakers/{target_id}/merge` | 合并两个声纹 |
 | GET | `/api/speakers/{speaker_id}/files` | 该人物出现过的录音 |
 | PATCH | `/api/speakers/{speaker_id}` | 改名 / 改颜色 / 备注 |
@@ -197,6 +198,7 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 ```json
 {
   "files": 980,
+  "done_files": 962,
   "total_seconds": 512340.2,
   "done_seconds": 498120.6,
   "segments": 128400,
@@ -207,7 +209,7 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 }
 ```
 
-`total_seconds`/`done_seconds` 按文件时长累计；`speech_hours` 按句子时长累计（更接近"有效语音"）。
+`done_files` 是已转写完成的文件数（前端顶部「已转写 N/980」用它）；`total_seconds`/`done_seconds` 按文件时长累计；`speech_hours` 按句子时长累计（更接近"有效语音"）。
 `eta_seconds = max(total_seconds - done_seconds, 0) × rtf_est`——注意它按"全库还没转写的时长"估算，不是只算当前队列；
 `rtf_est` 还没建立时取 `0.1` 兜底。
 
@@ -520,6 +522,23 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 
 - 服务层的 `ValueError` 映射为 400（`文件不存在`、`源文件已丢失`、`姓名不能为空`）；ffmpeg 截取/解码失败等 `RuntimeError` 映射为 500，`detail` 为异常原文。
 - 该接口内部用 ffmpeg 按 `-ss/-to` 截取到临时 wav，再调 CAM++ 算 embedding。
+- 想给**已存在的**人物换一段更干净的声纹（不新建、不改名），用下面的 `/enroll-from-file`。
+
+### POST `/api/speakers/{speaker_id}/enroll-from-file`
+
+和 `from-file` 一样从录音里截段算 embedding，但**覆盖已有说话人**的声纹：
+
+| 参数 | 位置 | 说明 |
+| --- | --- | --- |
+| `speaker_id` | path | 目标人物 |
+| `file_id` | query | `files.id` |
+| `start_ms` / `end_ms` | query | 区间；`end_ms=0` 表示到文件结尾 |
+
+```json
+{"ok": true, "speaker_id": 4}
+```
+
+前端「声纹库 → 更新声纹」就是走这个接口：可「从录音库选一段」（推荐，注意挑只有这个人说话的部分），也可「上传本机音频」。
 
 ### POST `/api/speakers/enroll`
 

@@ -96,6 +96,28 @@ export const api = {
   mergeSpeakers: (targetId, sourceId) =>
     request(`/api/speakers/${targetId}/merge`, { method: 'POST', body: { source_id: sourceId } }),
   speakerFiles: (id) => request(`/api/speakers/${id}/files`),
+  /** 用录音库里某条录音的一段音频新建声纹 */
+  createSpeakerFromFile: ({ fileId, startMs = 0, endMs = 0, name, overwrite = false }) =>
+    request(
+      `/api/speakers/from-file${qs({
+        file_id: fileId,
+        start_ms: startMs,
+        end_ms: endMs,
+        name,
+        overwrite,
+      })}`,
+      { method: 'POST' },
+    ),
+  /** 用录音库里某条录音的一段音频，覆盖已有说话人的声纹 */
+  enrollSpeakerFromFile: (speakerId, { fileId, startMs = 0, endMs = 0 }) =>
+    request(
+      `/api/speakers/${speakerId}/enroll-from-file${qs({
+        file_id: fileId,
+        start_ms: startMs,
+        end_ms: endMs,
+      })}`,
+      { method: 'POST' },
+    ),
   /** 上传一段干净人声登记声纹（raw body，绕开 multipart 依赖） */
   enrollUpload: async (file, { name, speakerId } = {}) => {
     const path = speakerId

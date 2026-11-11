@@ -109,7 +109,16 @@ curl -s -X PATCH $BASE/api/transcripts/23/segments/7 \
      -H 'Content-Type: application/json' -d '{"speaker":"spk0"}'
 ```
 
+# e) 用某条录音的一段音频，给已存在的声纹换一段更干净的（覆盖，不新建）
+curl -s -X POST "$BASE/api/speakers/4/enroll-from-file?file_id=23&start_ms=24500&end_ms=33100"
+
+# f) 反过来：从录音的某一段直接新建一个声纹（名字重名则复用并覆盖声纹）
+curl -s -X POST "$BASE/api/speakers/from-file?file_id=23&start_ms=24500&end_ms=33100&name=%E5%A6%88%E5%A6%88"
+```
+
 批量场景：`POST /api/transcripts/bulk-assign` body `{"file_id":23,"cluster":"spk1","speaker_id":2}`。
+
+声纹登记要点：挑 **5 秒以上、只有这一个人说话、没有杂音**的一段；登记一次后，其它录音里同一人会被自动匹配（阈值 `min_speaker_sim`，默认 0.62）并套用名字。
 
 簇分多了（同一个人被拆成 spk1/spk2）：`POST /api/transcripts/23/speakers/spk2/merge` body `{"target":"spk0"}`，返回 `{"ok":true,"moved":7}` 表示 7 句改归目标人。
 
