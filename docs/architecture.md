@@ -142,10 +142,10 @@ engine.load(cfg) → engine.transcribe(wav, cfg)
 全部在 `backend/app/services/pipeline.py`，按顺序：
 
 1. **质心计算** `build_centroids()`：按 cluster 分组，取时长最长的句子，**最多 6 条、每句 ≥ 1200 ms**；一条都不满足时退化为最短的前 2 句。单句音频短于 0.4 s 跳过。对每段调用 `engine.embed_audio()`，取平均后 L2 归一化。
-2. **簇合并** `merge_similar_clusters(centroids, utts, threshold, absorb_thr, absorb_max_seconds, target)`，三步收敛：
+2. **簇合并** `merge_similar_clusters(centroids, utts, threshold, absorb_thr, absorb_max_seconds, target)`，四步收敛（先丢掉没有任何句子的空簇，再按下面的三步收敛；指定了 `spk_num` 时吸收不会把人数降到该值以下）：
    - 反复找最相似的一对，余弦 ≥ `merge_threshold`（默认 0.72）就合并，质心取平均后重新归一化；
    - 若 `target`（来自 `spk_num`，0 表示不限制）小于当前簇数，继续合并最相似的一对直到达标；
-   - 吸收碎片：只有 ≤3 句、累计时长 ≤ `absorb_max_seconds`（默认 6.0 秒），且余弦 ≥ `absorb_threshold`（默认 0.5）的簇才会被并进大它两倍以上的簇。这一步刻意保守——早期版本按「时长占比」判断，会把只说了一两句话的真实第二说话人（例如子女在电话里只应了几句）并进主说话人，整条录音只剩一个人。
+   - 吸收碎片：只有 ≤3 句、累计时长 ≤ `absorb_max_seconds`（默认 6.0 秒），且余弦 ≥ `absorb_threshold`（默认 0.45）的簇才会被并进大它两倍以上的簇。这一步刻意保守——早期版本按「时长占比」判断，会把只说了一两句话的真实第二说话人（例如子女在电话里只应了几句）并进主说话人，整条录音只剩一个人。
    合并后返回新的质心表与 `alias` 映射，并**同步改写 `utterance.cluster`**；只影响本次转写，不动数据库里已有的记录。
 3. **声纹匹配** `match_speakers(centroids, min_speaker_sim)`：把每个簇质心与 `speakers.embedding` 逐条点积，取最大者；≥ 阈值（默认 0.62）才写 `speaker_id`、`display_name`、`confidence`。低于阈值仍记录 `confidence`，但不绑定。
 
@@ -154,7 +154,7 @@ engine.load(cfg) → engine.transcribe(wav, cfg)
 | 键 | 默认 | 作用 |
 | --- | --- | --- |
 | `merge_threshold` | 0.72 | 两个簇"是不是同一个人"，直接合并 |
-| `absorb_threshold` | 0.5 | 碎片簇"够不够像"某个大簇，决定是否被吸收 |
+| `absorb_threshold` | 0.45 | 碎片簇"够不够像"某个大簇，决定是否被吸收 |
 | `absorb_max_seconds` | 6.0 | 累计时长不超过多少（且 ≤3 句）才算碎片簇 |
 | `spk_num` | 0 | 目标人数；>0 时强制合并到该人数 |
 | `min_speaker_sim` | 0.62 | 簇"像不像声纹库里的某个人"，决定是否套用名字 |

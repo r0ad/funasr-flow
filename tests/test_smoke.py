@@ -295,12 +295,28 @@ def test_merge_similar_clusters_merges_close_and_rewrites_utterances() -> None:
 
 
 def test_merge_similar_clusters_identity_when_all_distinct() -> None:
-    utts = [Utterance(0, 1, "hi", "spk1")]
+    utts = [Utterance(0, 1000, "hi", "spk1"), Utterance(1000, 2000, "yo", "spk0")]
     centroids = {"spk0": _unit(1.0, 0.0), "spk1": _unit(0.0, 1.0)}
     out, alias = pipeline.merge_similar_clusters(centroids, utts, threshold=0.72)
     assert out is centroids
     assert alias == {"spk0": "spk0", "spk1": "spk1"}
     assert utts[0].cluster == "spk1"
+
+
+def test_merge_drops_clusters_without_utterances() -> None:
+    """没有句子的簇要丢掉：它给不了文字贴标签，也不该当吸收目标。"""
+    utts = [
+        Utterance(0, 3000, "第一句", "spk0"),
+        Utterance(3000, 5000, "第二句", "spk1"),
+    ]
+    centroids = {
+        "spk0": _unit(1.0, 0.0),
+        "spk1": _unit(0.0, 1.0),
+        "spk2": _unit(1.0, 0.0),  # 没有任何句子，且和 spk0 完全同向
+    }
+    out, alias = pipeline.merge_similar_clusters(centroids, utts, threshold=0.72)
+    assert set(out) == {"spk0", "spk1"}
+    assert alias == {"spk0": "spk0", "spk1": "spk1"}
 
 
 # --------------------------------------------------------------------- 设置 / 应用

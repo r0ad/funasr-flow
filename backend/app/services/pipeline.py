@@ -136,7 +136,8 @@ def merge_similar_clusters(
 ):
     """把"一个人被拆成多个簇"的情况收拾干净。
 
-    三步：
+    四步：
+    0. 没有任何句子的簇直接丢弃（不参与合并，也不会被当成吸收目标）；
     1. 余弦 ≥ threshold 的簇直接合并；
     2. 若指定了目标人数（设置里的"说话人数"），反复合并最相似的一对直到达标；
     3. 吸收碎片簇：只说了一两句、累计时长 ≤ absorb_max_seconds、且与某个大簇相似度
@@ -151,8 +152,18 @@ def merge_similar_clusters(
         return centroids, {k: k for k in keys}
 
     weights: dict[str, float] = defaultdict(float)
+    utt_counts: dict[str, int] = defaultdict(int)
     for u in utts:
         weights[u.cluster] += max(0.001, (u.end_ms - u.start_ms) / 1000.0)
+        utt_counts[u.cluster] += 1
+
+    # 0) 没有任何句子的簇直接丢掉。它们既给不了任何一行文字贴标签，也不该当吸收目标
+    #    ——否则真实说话人的句子会被挂到一个空簇的名字上。
+    kept = [k for k in keys if utt_counts[k] > 0] or keys
+    dropped_any = len(kept) < len(keys)
+    keys = kept
+    if len(keys) < 2:
+        return {k: centroids[k] for k in keys}, {k: k for k in keys}
 
     groups: dict[str, list[str]] = {k: [k] for k in keys}
     vec: dict[str, np.ndarray] = {k: centroids[k] for k in keys}
@@ -192,13 +203,10 @@ def merge_similar_clusters(
                 break
             _merge(pair[2], pair[1])
 
-    # 3) 碎片簇吸收（只吃"一两句的噪声"，不吃说话少的人）
-    utt_counts: dict[str, int] = defaultdict(int)
-    for u in utts:
-        utt_counts[u.cluster] += 1
-
+    # 3) 碎片簇吸收（只吃"两三句的噪声"，不吃说话少的人）
     changed = True
-    while changed and len(vec) > 1:
+    floor = max(1, target or 1)  # 设置里指定了人数就绝不少于此数
+    while changed and len(vec) > floor:
         changed = False
         for small in sorted(vec, key=lambda k: sum(weights[x] for x in groups[k])):
             members = groups[small]
@@ -217,7 +225,7 @@ def merge_similar_clusters(
                 changed = True
                 break
 
-    if not merged_any:  # 没有任何合并时保持入参对象不变（调用方按需判断）
+    if not merged_any and not dropped_any:  # 完全没动时保持入参对象不变（调用方按需判断）
         return centroids, {k: k for k in keys}
 
     alias: dict[str, str] = {}

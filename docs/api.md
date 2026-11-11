@@ -109,7 +109,7 @@
     "auto_map_speakers": true,
     "min_speaker_sim": 0.62,
     "merge_threshold": 0.72,
-    "absorb_threshold": 0.5,
+    "absorb_threshold": 0.45,
     "absorb_max_seconds": 6.0,
     "concurrency": 1,
     "keep_wav": false,

@@ -2,6 +2,7 @@
 
 用法：python scripts/probe_spk2.py "CallRecord/10月10日 妈.m4a"
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -19,8 +20,21 @@ from backend.app.engines.funasr_engine import FunAsrEngine  # noqa: E402
 def to_wav(src: Path) -> Path:
     out = temp_path(".wav", "probe2-")
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ac", "1", "-ar", "16000",
-         "-c:a", "pcm_s16le", str(out)],
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(src),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(out),
+        ],
         check=True,
     )
     return out
@@ -44,7 +58,9 @@ def main() -> None:
         }
         item, centers = eng._generate(str(wav), kw)
         info = item.get("sentence_info") or []
-        print(f"句数 {len(info)}，质心类型 {type(centers).__name__} 形状 {getattr(centers, 'shape', None)}")
+        print(
+            f"句数 {len(info)}，质心类型 {type(centers).__name__} 形状 {getattr(centers, 'shape', None)}"
+        )
         for i, s in enumerate(info[:12]):
             ts = s.get("timestamp") or []
             first = ts[0][0] if ts else None

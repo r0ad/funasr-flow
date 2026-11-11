@@ -3,6 +3,7 @@
 用法: python scripts/probe_pipeline.py [音频路径 ...]
 不写入数据库、不影响正式流程，只打印结构化结果与耗时。
 """
+
 import json
 import os
 import subprocess
@@ -15,16 +16,30 @@ os.environ.setdefault("HF_HOME", os.path.join(ROOT, ".cache", "huggingface"))
 os.environ.setdefault("FUNASR_CACHE", os.path.join(ROOT, ".cache", "funasr"))
 
 DEFAULT_SAMPLES = [
-    "CallRecord/010 5683 5555_20240603145324.m4a",   # 17s 短
-    "CallRecord/10月13日 妈.m4a",                     # 67s 中
-    "CallRecord/10月22日 妈.m4a",                     # 669s 长
+    "CallRecord/010 5683 5555_20240603145324.m4a",  # 17s 短
+    "CallRecord/10月13日 妈.m4a",  # 67s 中
+    "CallRecord/10月22日 妈.m4a",  # 669s 长
 ]
 
 
 def to_wav(src: str, dst: str) -> float:
     t0 = time.time()
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", src, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", dst],
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            src,
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            dst,
+        ],
         check=True,
     )
     return time.time() - t0

@@ -178,7 +178,7 @@ funasr-flow/
 | `auto_map_speakers` | `true` | 转写后自动与声纹库比对并绑定已有名字 | 设置页 checkbox |
 | `min_speaker_sim` | `0.62` | 绑定已有声纹的最小余弦相似度，调高更保守 | 设置页「声纹匹配阈值」 |
 | `merge_threshold` | `0.72` | 两个说话人簇余弦 ≥ 此值就视为同一个人并合并 | 设置页暂未暴露，用 `PATCH /api/settings` |
-| `absorb_threshold` | `0.5` | 碎片簇被并入大簇的最低相似度 | 同上 |
+| `absorb_threshold` | `0.45` | 碎片簇被并入大簇的最低相似度 | 同上 |
 | `absorb_max_seconds` | `6.0` | 累计时长不超过此值（且 ≤3 句）才算碎片簇 | 同上 |
 | `concurrency` | `1` | 并发任务数；当前实现固定单卡串行，此键暂不生效 | 留 `1`（见 `docs/architecture.md`） |
 | `keep_wav` | `false` | 是否保留转码后的 16 kHz 中间 wav（`data/`、`.cache/tmp/`） | 设置页 checkbox |
@@ -260,6 +260,14 @@ funasr-flow mcp --server http://127.0.0.1:8000
 `list_files`、`get_file`、`get_transcript`、`search`、`queue_state`、`enqueue_transcribe`、
 `cancel_jobs`、`scan_library`、`list_speakers`、`health`。
 
+### 某条录音的人数识别不准怎么办
+
+打开这条录音的详情页，右上角「人数」选 2（或 3），再点「重新转写」——这次任务的说话人数会固定下来，
+聚类会按人数收敛。也可以只调全局默认：设置页「说话人数」。
+
+如果自动结果多出一个人（常见于短通话），在详情页左侧说话人卡片的「合并到…」里并过去即可，
+不需要重新转写。
+
 ## 常见问题
 
 **显存不足 / 没有 GPU？**
@@ -272,7 +280,7 @@ funasr-flow mcp --server http://127.0.0.1:8000
 先确认 `ffmpeg -version` 能跑，且 `ffmpeg` 在 `PATH` 里（Windows 装完要重开终端）。微信的 `.silk` 语音不在支持列表内，需要先转成 wav/mp3。
 
 **说话人被拆得太碎（过聚类）？**
-先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`absorb_max_seconds` + `absorb_threshold`（默认 6.0 秒 / 0.5）把只有两三句的噪声簇吸收进大簇；
+先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`absorb_max_seconds` + `absorb_threshold`（默认 6.0 秒 / 0.45）把只有两三句的噪声簇吸收进大簇；
 多出来的说话人不影响识别，可以在详情页用「合并到…」手动并掉。`min_speaker_sim`（默认 0.62）只决定"是否套用声纹库里的名字"，不影响聚类。这几个键都能用 `PATCH /api/settings` 改，设置页目前只暴露了 `spk_num` 与 `min_speaker_sim`。
 
 **识别准确率不理想？**

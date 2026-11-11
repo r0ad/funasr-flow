@@ -1,5 +1,7 @@
 """查看 spk_embedding_center 的真实类型与结构。"""
+
 import sys
+
 from funasr import AutoModel
 
 wav = sys.argv[1] if len(sys.argv) > 1 else ".cache/tmp/cmp.wav"
@@ -35,7 +37,7 @@ try:
     elif isinstance(c, dict):
         for k, v in c.items():
             print("  ", k, type(v), getattr(v, "shape", None))
-    elif isinstance(c, (list, tuple)):
+    elif isinstance(c, list | tuple):
         print("len:", len(c), [getattr(x, "shape", type(x)) for x in c])
 except Exception as e:  # noqa: BLE001
     print("err", e)

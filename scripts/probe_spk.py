@@ -2,6 +2,7 @@
 
 用法：python scripts/probe_spk.py "CallRecord/10月10日 妈.m4a"
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -21,8 +22,21 @@ from backend.app.services.pipeline import merge_similar_clusters  # noqa: E402
 def to_wav(src: Path) -> Path:
     out = temp_path(".wav", "probe-")
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ac", "1", "-ar", "16000",
-         "-c:a", "pcm_s16le", str(out)],
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(src),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(out),
+        ],
         check=True,
     )
     return out
@@ -60,11 +74,11 @@ def main() -> None:
         utts = [Utterance(u.start_ms, u.end_ms, u.text, u.cluster) for u in res.utterances]
         for thr in (0.60, 0.65, 0.70, 0.72, 0.78):
             cents, alias = merge_similar_clusters(
-                res.centroids, utts, threshold=thr, small_ratio=0.15, absorb_thr=0.35, target=2
+                res.centroids, utts, threshold=thr, absorb_thr=0.35, target=2
             )
             print(f"threshold={thr} target=2 -> {len(cents)} 簇 alias={alias}")
         cents, alias = merge_similar_clusters(
-            res.centroids, utts, threshold=0.72, small_ratio=0.15, absorb_thr=0.35, target=None
+            res.centroids, utts, threshold=0.72, absorb_thr=0.35, target=None
         )
         print(f"threshold=0.72 target=None -> {len(cents)} 簇 alias={alias}")
     finally:

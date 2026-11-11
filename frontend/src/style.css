@@ -422,3 +422,21 @@ input[type='checkbox'].cb { width: 15px; height: 15px; accent-color: var(--accen
   .batchbar { left: 78px; right: 10px; }
   .content { padding: 14px 12px 100px; }
 }
+
+/* 详情页头部的“人数”下拉 */
+.spknum {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.spknum select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 13px;
+}

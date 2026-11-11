@@ -28,6 +28,15 @@
           <button class="btn" :disabled="!segments.length" @click="doExport">
             <Icon name="download" :size="15" /> 导出
           </button>
+          <label class="spknum" title="这通电话里有几个人说话？指定后重新转写会按人数收敛，识别不准时很有用">
+            人数
+            <select v-model.number="spkNum">
+              <option :value="0">自动</option>
+              <option :value="2">2 人</option>
+              <option :value="3">3 人</option>
+              <option :value="4">4 人</option>
+            </select>
+          </label>
           <button class="btn" :disabled="retranscribing" @click="retranscribe">
             <Icon name="refresh" :size="15" /> {{ retranscribing ? '已排队' : '重新转写' }}
           </button>
@@ -230,6 +239,8 @@ const activeIdx = ref(-1)
 const filterCluster = ref(null)
 const exportFmt = ref('txt')
 const retranscribing = ref(false)
+// 0 = 自动；指定人数会作为任务级 options 覆盖全局 spk_num
+const spkNum = ref(0)
 const editingIdx = ref(-1)
 const editText = ref('')
 const lineRefs = {}
@@ -431,9 +442,12 @@ async function enqueue() {
 }
 
 async function retranscribe() {
-  if (!confirm('重新转写会清空当前结果（原录音不动），继续？')) return
+  const tip = spkNum.value
+    ? `按 ${spkNum.value} 人重新转写，会清空当前结果（原录音不动），继续？`
+    : '重新转写会清空当前结果（原录音不动），继续？'
+  if (!confirm(tip)) return
   try {
-    await api.batch([fileId.value], 'reset')
+    await api.batch([fileId.value], 'reset', spkNum.value ? { spk_num: spkNum.value } : null)
     retranscribing.value = true
     toast('已重新排队', 'ok')
   } catch (e) {
