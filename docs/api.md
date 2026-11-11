@@ -304,11 +304,17 @@ GET /api/browse?path=H:/ws-ai/funasr-flow
   "sep": "\\",
   "roots": [{"name": "C:", "path": "C:\\"}, {"name": "H:", "path": "H:\\"}],
   "entries": [{"name": "CallRecord", "path": "H:\\ws-ai\\funasr-flow\\CallRecord", "audio": 980}],
-  "audio": 0
+  "audio": 0,
+  "container": false,
+  "mounts": [],
+  "image": "sunzroad/funasr-flow:latest",
+  "hint": ""
 }
 ```
 
-- `entries` 只列子目录（跳过 `.` 开头的），**里面有录音的排在前面**；`audio` 是该目录（不递归）的音频数。
+- `entries` 只列子目录（跳过 `.`/`$` 开头的隐藏与系统目录，以及 `System Volume Information` 等），**里面有录音的排在前面**；`audio` 是该目录（不递归）的音频数。
+- `container`：是否跑在 Docker 里（检测 `/.dockerenv` 或 `FLOW_IN_DOCKER=1`）。为 `true` 时：
+  `mounts` 列出可见挂载（`/media`、`/mnt`、`/data`，以及整盘挂载约定 `/host/<盘符>`），它们会被放进 `roots` 最前面，界面上直接可点；`hint` 是给界面显示的一句话说明（容器里看不到未挂载的宿主机目录）。
 - 无权限返回 403 `{"detail": "没有权限读取: ..."}`，其它读取失败返回 400。
 
 ### POST `/api/files/upload`

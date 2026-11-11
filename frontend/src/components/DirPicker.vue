@@ -2,28 +2,62 @@
   <Modal :open="open" title="选择录音目录" wide @close="emit('close')">
     <div class="picker">
       <!-- 容器提示：只能看到挂载进来的目录 -->
-      <div v-if="data.container" class="docker-tip">
-        <div class="docker-tip-head">
+      <details v-if="data.container" class="docker-tip" :open="!data.mounts.length">
+        <summary class="docker-tip-head">
           <Icon name="box" :size="15" />
           <b>正在 Docker 里运行</b>
-          <span class="small">只能浏览挂载进容器的目录：{{ mountNames || '（无）' }}</span>
-        </div>
+          <span class="small">可见：{{ mountNames || '（无挂载）' }}</span>
+          <span class="small docker-tip-more">挂载宿主机目录 ▾</span>
+        </summary>
         <div class="docker-tip-body">
-          <div class="small">要把宿主机上别的目录挂进来，先停掉容器再用 -v 重启：</div>
-          <div class="docker-line">
+          <div class="small">
+            容器只能看见挂载进来的目录。想选宿主机的文件夹：先生成命令、停掉容器重跑一次，
+            回来列表里就会出现对应的盘。
+          </div>
+
+          <div class="docker-modes">
+            <label class="docker-mode">
+              <input v-model="mountMode" type="radio" value="drive" />
+              整个盘（推荐，之后进 /host/盘符 挑文件夹）
+            </label>
+            <label class="docker-mode">
+              <input v-model="mountMode" type="radio" value="dir" />
+              只挂一个目录
+            </label>
+          </div>
+
+          <div v-if="mountMode === 'drive'" class="docker-line">
+            <span class="small">宿主机盘符</span>
+            <button
+              v-for="d in drives"
+              :key="d"
+              class="chip"
+              :class="{ on: drive === d }"
+              @click="drive = d"
+            >
+              {{ d }}:
+            </button>
+            <span class="small">→ 容器 /host/{{ drive.toLowerCase() }}</span>
+          </div>
+
+          <div v-else class="docker-line">
             <input
               v-model="hostPath"
               class="input mono docker-input"
-              placeholder="宿主机目录，如 D:\我的通话录音"
+              placeholder="宿主机目录，如 D:\\我的通话录音"
             />
             <select v-model="target" class="input docker-sel">
               <option v-for="p in mountChoices" :key="p" :value="p">{{ p }}</option>
             </select>
+          </div>
+
+          <div class="docker-actions">
             <button class="btn sm" @click="copyCmd">复制命令</button>
+            <span class="small">粘到终端执行；数据卷不变，已转写的结果不会丢</span>
           </div>
           <pre class="docker-cmd">{{ cmd }}</pre>
         </div>
-      </div>
+      </details>
 
       <!-- 盘符 / 起点 -->
       <div class="picker-roots">
@@ -131,6 +165,9 @@ const busy = ref(false)
 const error = ref('')
 const hostPath = ref('')
 const target = ref('/media')
+const mountMode = ref('drive')
+const drive = ref('D')
+const drives = ['C', 'D', 'E', 'F', 'G', 'H']
 
 // 容器内可选的挂载点：已存在的 + 常用的备用名
 const mountChoices = computed(() => {
@@ -140,15 +177,24 @@ const mountChoices = computed(() => {
 })
 const mountNames = computed(() => (data.mounts || []).map((m) => m.path).join('、'))
 
-// 生成一条可直接粘贴的 docker run（数据/缓存用命名卷，录音目录只读挂载）
+// 生成一条可直接粘贴的 docker run：数据/缓存用命名卷，录音目录只读挂载
 const cmd = computed(() => {
-  const host = hostPath.value.trim() || 'D:\\我的通话录音'
+  const image = data.image || 'sunzroad/funasr-flow:latest'
+  let mount
+  if (mountMode.value === 'drive') {
+    const d = drive.value.toUpperCase()
+    mount = `  -v "${d}:\\:/host/${d.toLowerCase()}:ro" \\`
+  } else {
+    const host = hostPath.value.trim() || 'D:\\我的通话录音'
+    mount = `  -v "${host}:${target.value}:ro" \\`
+  }
   return [
     'docker rm -f funasr-flow',
-    `docker run -d --name funasr-flow -p 8000:8000 \\`,
-    `  -v funasr-data:/data -v funasr-cache:/cache \\`,
-    `  -v "${host}:${target.value}:ro" \\`,
-    `  ${data.image || 'sunzroad/funasr-flow:latest'}`,
+    'docker run -d --name funasr-flow --restart unless-stopped -p 8000:8000 \\',
+    '  -e TZ=Asia/Shanghai \\',
+    '  -v funasr-data:/data -v funasr-cache:/cache \\',
+    mount,
+    `  ${image}`,
   ].join('\n')
 })
 
@@ -311,5 +357,84 @@ watch(
   align-items: center;
   gap: 10px;
   width: 100%;
+}
+.docker-tip {
+  border: 1px solid var(--accent-weak, var(--border));
+  background: var(--accent-weak, rgba(99, 102, 241, 0.06));
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.docker-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent, #4f46e5);
+  font-size: 13px;
+}
+.docker-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.docker-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.docker-input {
+  flex: 1;
+  font-size: 12.5px;
+}
+.docker-sel {
+  width: 130px;
+  font-size: 12.5px;
+}
+.docker-cmd {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text-2, var(--text));
+}
+.docker-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12.5px;
+}
+.docker-mode {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.docker-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.docker-tip summary {
+  cursor: pointer;
+  list-style: none;
+}
+.docker-tip summary::-webkit-details-marker {
+  display: none;
+}
+.docker-tip-more {
+  margin-left: auto;
+  color: var(--accent, #4f46e5);
+}
+.docker-tip[open] .docker-tip-more {
+  visibility: hidden;
 }
 </style>

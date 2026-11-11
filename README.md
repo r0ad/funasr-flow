@@ -147,17 +147,27 @@ docker compose up -d --build
 >   sunzroad/funasr-flow:latest
 > ```
 >
-> **想让容器读到宿主机任意目录**：多挂一个只读卷，然后在网页右上角「选录音目录」里选到它即可
-> （选目录弹窗列的是**容器内**的文件系统，所以挂载点会出现在里面）：
+> **想让容器读到宿主机任意目录**：容器只能看到挂载进来的路径，二选一——
 >
 > ```bash
+> # 方式 A（推荐）：整盘只读挂进来，之后在网页里随便挑文件夹
 > docker run -d --name funasr-flow -p 8000:8000 \
->   -v flow-data:/data \
+>   -v funasr-data:/data -v funasr-cache:/cache \
+>   -v "D:/:/host/d:ro" \
+>   sunzroad/funasr-flow:latest
+> # 网页 → 选录音目录 → 左侧点 /host/d → 点进你的通话录音文件夹 → 用这个目录
+>
+> # 方式 B：只挂一个目录
+> docker run -d --name funasr-flow -p 8000:8000 \
+>   -v funasr-data:/data -v funasr-cache:/cache \
 >   -v "D:/我的通话录音:/media:ro" \
 >   sunzroad/funasr-flow:latest
-> # 打开网页 → 选录音目录 → 点 D: 之外的根目录/直接输入 /media → 用这个目录
+> # 网页 → 选录音目录 → 点 /media → 用这个目录
 > ```
-> Windows 路径里的盘符用 `D:/...` 或 `/d/...` 都行，记得加引号。
+>
+> 这些参数不用记：容器里点右上角「选录音目录」，弹窗顶部会列出现有挂载，选个盘符就能
+> 复制到现成的 `docker run` 命令（数据卷沿用同一个，转写结果不会丢）。盘符写 `D:/...`
+> 或 `/d/...` 都行，记得加引号。
 >
 > 上传的文件会落在命名卷 `flow-data` 里（`/data/uploads`），不占用宿主机的绑定目录；
 > 删除记录时这些上传副本会被一起删掉，扫描进来的原始录音永远不动。

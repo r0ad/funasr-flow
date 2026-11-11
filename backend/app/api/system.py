@@ -46,7 +46,7 @@ def in_container() -> bool:
 
 
 def container_mounts() -> list[dict]:
-    """容器里已经挂进来的媒体目录（约定挂到 /media、/mnt 之类）。"""
+    """容器里已经挂进来的媒体目录（约定挂到 /media、/mnt 之类，整盘挂到 /host/<盘符>）。"""
     if not in_container():
         return []
     out: list[dict] = []
@@ -57,6 +57,15 @@ def container_mounts() -> list[dict]:
                 out.append({"name": base, "path": base, "audio": _count_audio(p)})
         except OSError:
             continue
+    # 整盘挂载约定：宿主机 D:\ → 容器 /host/d
+    host_root = Path("/host")
+    try:
+        if host_root.is_dir():
+            for p in sorted(host_root.iterdir()):
+                if p.is_dir():
+                    out.append({"name": str(p), "path": str(p), "audio": _count_audio(p)})
+    except OSError:
+        pass
     return out
 
 
@@ -99,6 +108,10 @@ def _count_audio(path: Path, limit: int = 20000) -> int:
 def browse(path: str | None = None) -> dict:
     """列出目录，供界面里的「选择录音目录」用（本机工具，默认不限制范围）。"""
     roots = _roots()
+    mounts = container_mounts()
+    # 容器里最该点的就是挂载点，把它们放到最前面
+    if mounts:
+        roots = [{"name": m["path"], "path": m["path"]} for m in mounts] + roots
     raw = path or str(get_setting_safe("input_dir") or "")
     target = Path(raw).expanduser() if raw else None
     if target is None or not target.is_dir():
@@ -120,9 +133,14 @@ def browse(path: str | None = None) -> dict:
         with os.scandir(target) as it:
             for entry in it:
                 try:
-                    if not entry.is_dir() or entry.name.startswith("."):
+                    if not entry.is_dir():
                         continue
                 except OSError:
+                    continue
+                # 跳过隐藏目录和 Windows 系统目录（挂整盘时否则满屏 $RECYCLE.BIN）
+                if entry.name.startswith(".") or entry.name.startswith("$"):
+                    continue
+                if entry.name in {"System Volume Information", "Recovery", "Config.Msi"}:
                     continue
                 child = Path(entry.path)
                 entries.append(
@@ -145,7 +163,6 @@ def browse(path: str | None = None) -> dict:
         parent = None
 
     container = in_container()
-    mounts = container_mounts()
     return {
         "path": str(target),
         "parent": parent,

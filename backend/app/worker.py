@@ -57,7 +57,10 @@ def run_forever(poll_interval: float = 1.0) -> None:
             log.info("任务 #%s 已取消", job_id)
         except Exception as e:  # noqa: BLE001 - 任何异常都要落到数据库
             log.exception("任务 #%s 失败", job_id)
-            q.mark_failed(job_id, f"{type(e).__name__}: {e}")
+            # 我们自己抛的 RuntimeError 文案已经是给人看的（如"没有检测到语音…"），
+            # 别把 "RuntimeError: " 前缀塞进界面；其它异常保留类型方便排查。
+            msg = str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}"
+            q.mark_failed(job_id, msg)
         finally:
             set_metric("worker_heartbeat", time.time())
     log.info("worker 退出")

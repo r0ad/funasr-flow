@@ -79,6 +79,7 @@ docs/                 architecture / api / models / llm-usage
   （删除时只有 `data/uploads/` 里的副本会被 `purge`，用户手机里的原始录音永远不动）。
 - **浏览目录不限制范围**：`GET /api/browse` 直接列本机文件系统（这是本地单机工具的定位），
   只挡无权限（403）和非法路径（400）；Windows 盘符靠 `_roots()` 枚举，POSIX 给 `/` 和 `~`。
+- **容器里只能浏览挂载点**：`api/system.py` 用 `/.dockerenv` 判断 Docker，把 `/media`、`/mnt`、`/data` 和整盘约定 `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint` 给 DirPicker 显示说明与命令生成。别试图在容器里读宿主机路径，只能提示用户加 `-v` 重挂；Windows 上 SQLite 也必须放命名卷（见 README Docker 段）。
 - **搜索**：FTS5 `trigram` 分词，查询词 < 3 字必须走 LIKE 回退（`api/transcripts.py`），不要改成分词器。
 - **导出文件名**：中文文件名必须用 RFC 5987 `filename*=UTF-8''…`，`latin-1` 会乱码。
 
