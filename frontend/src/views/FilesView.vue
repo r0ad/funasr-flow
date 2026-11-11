@@ -1,93 +1,136 @@
 <template>
   <div
     class="stack"
-    style="gap: 14px"
+    style="gap: 16px"
     @dragover.prevent="onDragOver"
     @dragleave.prevent="onDragLeave"
     @drop.prevent="onDrop"
   >
-    <!-- 状态筛选 -->
-    <div class="row wrap">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="btn sm"
-        :class="{ primary: tab.key === activeTab }"
-        @click="switchTab(tab.key)"
-      >
-        {{ tab.label }}
-        <span v-if="tab.count !== undefined" class="muted" style="font-weight: 400">{{ tab.count }}</span>
-      </button>
-      <span class="spacer" />
-      <div class="search-wrap">
-        <Icon name="search" :size="15" />
-        <input
-          v-model="filters.q"
-          class="input search"
-          style="width: 240px"
-          placeholder="按文件名筛选…"
-          @input="onSearchInput"
-        />
+    <!-- 概览 -->
+    <div class="grid grid-4">
+      <div class="stat">
+        <span class="k">录音总数</span>
+        <span class="v">{{ store.stats?.files ?? total }}<small>个</small></span>
+        <span class="d">资料库内已入库的音频</span>
       </div>
-      <button class="btn sm" :disabled="uploading" @click="pickFiles">
-        <Icon name="upload" :size="15" />
-        {{ uploading ? `上传中 ${uploadPct}%` : '上传录音' }}
-      </button>
-      <input
-        ref="fileInput"
-        type="file"
-        accept="audio/*,.m4a,.mp3,.wav,.amr,.aac,.flac,.ogg,.opus,.wma,.mp4,.3gp,.m4b,.webm"
-        multiple
-        class="vh"
-        @change="onPick"
-      />
+      <div class="stat">
+        <span class="k">语音时长</span>
+        <span class="v">{{ hoursText }}<small>小时</small></span>
+        <span class="d">全部录音累计时长</span>
+      </div>
+      <div class="stat">
+        <span class="k">已转写</span>
+        <span class="v">{{ store.stats?.done_files ?? 0 }}<small>个</small></span>
+        <span class="d">{{ fmtDuration(store.stats?.done_seconds || 0) }} 已出文字</span>
+      </div>
+      <div class="stat">
+        <span class="k">待处理</span>
+        <span class="v">{{ todoCount }}<small>个</small></span>
+        <span class="d">{{ pendingText }}</span>
+      </div>
     </div>
 
-    <!-- 上传队列 -->
-    <div v-if="uploads.length" class="card" style="padding: 10px 14px">
-      <div class="row" style="justify-content: space-between">
-        <b class="small">上传队列（{{ uploads.filter((u) => u.status === 'done').length }}/{{ uploads.length }}）</b>
-        <span class="row" style="gap: 6px">
+    <!-- 工具栏 -->
+    <div class="card flush">
+      <div class="toolbar">
+        <div class="seg">
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            :class="{ active: tab.key === activeTab }"
+            @click="switchTab(tab.key)"
+          >
+            {{ tab.label }}
+            <span v-if="tab.count !== undefined" class="n">{{ tab.count }}</span>
+          </button>
+        </div>
+        <span class="spacer" />
+        <div class="search-wrap">
+          <Icon name="search" :size="15" />
+          <input
+            v-model="filters.q"
+            class="input search"
+            style="width: 232px"
+            placeholder="按文件名筛选…"
+            @input="onSearchInput"
+          />
+        </div>
+        <button class="btn" :disabled="uploading" @click="pickFiles">
+          <Icon name="upload" :size="15" />
+          {{ uploading ? `上传中 ${uploadPct}%` : '上传录音' }}
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          accept="audio/*,.m4a,.mp3,.wav,.amr,.aac,.flac,.ogg,.opus,.wma,.mp4,.3gp,.m4b,.webm"
+          multiple
+          class="vh"
+          @change="onPick"
+        />
+      </div>
+
+      <!-- 上传队列 -->
+      <div v-if="uploads.length" class="queue-card" style="border-top: 1px solid var(--border)">
+        <div class="row">
+          <b class="small">
+            上传队列 {{ uploads.filter((u) => u.status === 'done').length }}/{{ uploads.length }}
+          </b>
+          <span class="spacer" />
           <span v-if="uploading" class="small muted">上传中…</span>
           <button class="btn ghost icon sm" title="关闭" @click="dismissUploads">
             <Icon name="x" :size="14" />
           </button>
-        </span>
-      </div>
-      <div v-for="(u, i) in uploads" :key="i" style="margin-top: 8px">
-        <div class="row" style="justify-content: space-between">
-          <span class="small truncate" style="max-width: 70%">{{ u.name }}</span>
-          <span class="small" :style="{ color: u.status === 'error' ? 'var(--err)' : 'var(--muted)' }">
+        </div>
+        <div v-for="(u, i) in uploads" :key="i" class="queue-item">
+          <span class="nm truncate">{{ u.name }}</span>
+          <div class="bar thin">
+            <span
+              :style="{ width: `${u.pct}%`, background: u.status === 'error' ? 'var(--err)' : undefined }"
+            />
+          </div>
+          <span
+            class="small nowrap"
+            style="width: 62px; text-align: right"
+            :style="{ color: u.status === 'error' ? 'var(--err)' : 'var(--muted)' }"
+          >
             {{ u.status === 'done' ? '完成' : u.status === 'error' ? u.error : `${u.pct}%` }}
           </span>
-        </div>
-        <div class="bar" style="margin-top: 4px; height: 4px">
-          <span :style="{ width: `${u.pct}%`, background: u.status === 'error' ? 'var(--err)' : undefined }" />
         </div>
       </div>
     </div>
 
     <!-- 拖拽提示 -->
     <div v-if="dragging" class="drop-mask">
-      <div class="drop-box">
-        <Icon name="upload" :size="26" />
-        <b>松开即上传到录音库</b>
-        <span class="small muted">支持 .m4a .mp3 .wav .amr .aac 等，可一次拖多个</span>
+      <div class="box">
+        <Icon name="upload" :size="28" />
+        <div style="font-weight: 640; margin-top: 6px">松开即上传</div>
+        <div class="small" style="color: var(--muted); margin-top: 2px">
+          支持 .m4a .mp3 .wav .amr 等，可一次拖多个
+        </div>
       </div>
     </div>
 
     <!-- 列表 -->
-    <div class="card" style="overflow: hidden">
+    <div class="card flush">
       <div v-if="loading && !items.length" class="empty">加载中…</div>
       <div v-else-if="!items.length" class="empty">
-        <h3>这里还没有录音</h3>
-        <p class="small">
-          把手机里的通话录音放进 <code>CallRecord/</code>，点右上角「扫描目录」选文件夹，或直接把文件拖进这个页面。
+        <div class="art"><Icon name="files" :size="26" /></div>
+        <h3>还没有录音</h3>
+        <p class="hint">
+          上传单个文件、直接拖进来，或者从手机备份目录整批导入。导入的音频会复制进资料库，
+          之后换目录、重启都不影响已有文字稿。
         </p>
-        <button class="btn primary" style="margin-top: 14px" @click="scanNow">扫描录音目录</button>
+        <div class="row" style="justify-content: center; gap: 8px; margin-top: 16px">
+          <button class="btn primary" @click="pickFiles">
+            <Icon name="upload" :size="15" /> 上传录音
+          </button>
+          <button class="btn" @click="openImport">
+            <Icon name="folder" :size="15" /> 导入目录
+          </button>
+        </div>
       </div>
 
-      <div v-else style="overflow: auto; max-height: calc(100vh - 260px)">
+      <div v-else class="table-wrap" style="max-height: calc(100vh - 330px)">
         <table class="table">
           <thead>
             <tr>
@@ -103,15 +146,15 @@
               <th class="sortable" @click="sortBy('name')">
                 文件 <SortMark field="name" :sort="sort" />
               </th>
-              <th class="sortable" style="width: 90px" @click="sortBy('duration')">
+              <th class="sortable" style="width: 92px" @click="sortBy('duration')">
                 时长 <SortMark field="duration" :sort="sort" />
               </th>
               <th style="width: 92px">大小</th>
-              <th style="min-width: 150px">说话人</th>
-              <th class="sortable" style="width: 108px" @click="sortBy('status')">
+              <th style="min-width: 160px">说话人</th>
+              <th class="sortable" style="width: 112px" @click="sortBy('status')">
                 状态 <SortMark field="status" :sort="sort" />
               </th>
-              <th class="sortable" style="width: 130px" @click="sortBy('updated')">
+              <th class="sortable" style="width: 124px" @click="sortBy('updated')">
                 更新时间 <SortMark field="updated" :sort="sort" />
               </th>
               <th class="col-actions" />
@@ -123,15 +166,17 @@
                 <input type="checkbox" class="cb" :checked="selected.has(f.id)" @change="toggle(f.id)" />
               </td>
               <td>
-                <RouterLink :to="`/files/${f.id}`" class="truncate" style="display: block; max-width: 420px">
+                <RouterLink :to="`/files/${f.id}`" class="file-link truncate" style="display: block; max-width: 430px">
                   {{ f.name }}
                 </RouterLink>
-                <span v-if="f.error" class="small" style="color: var(--err)">{{ f.error }}</span>
+                <span v-if="f.error" class="small truncate" style="display: block; color: var(--err)">
+                  {{ f.error }}
+                </span>
               </td>
               <td class="num">{{ fmtDuration(f.duration) }}</td>
               <td class="num">{{ fmtBytes(f.size) }}</td>
               <td>
-                <div v-if="f.speakers?.length" class="row wrap" style="gap: 4px">
+                <div v-if="f.speakers?.length" class="row wrap" style="gap: 5px">
                   <span
                     v-for="s in f.speakers.slice(0, 3)"
                     :key="s.cluster"
@@ -147,26 +192,16 @@
               </td>
               <td>
                 <span class="badge" :class="STATUS_META[f.status]?.tone">
-                  <span v-if="f.status === 'running'" class="bullet" />
                   {{ STATUS_META[f.status]?.label || f.status }}
                 </span>
-                <div
-                  v-if="f.status === 'running' && progressFor(f.id) !== null"
-                  class="bar"
-                  style="margin-top: 5px; height: 4px"
-                >
+                <div v-if="f.status === 'running' && progressFor(f.id) !== null" class="bar thin" style="margin-top: 6px">
                   <span :style="{ width: `${Math.round(progressFor(f.id) * 100)}%` }" />
                 </div>
               </td>
               <td class="num small">{{ shortDate(f.updated_at) }}</td>
               <td class="col-actions">
-                <div class="row" style="justify-content: flex-end; gap: 4px">
-                  <button
-                    v-if="f.status === 'done'"
-                    class="btn ghost icon sm"
-                    title="查看转写"
-                    @click="$router.push(`/files/${f.id}`)"
-                  >
+                <div class="row row-actions" style="justify-content: flex-end; gap: 2px">
+                  <button v-if="f.status === 'done'" class="btn ghost icon sm" title="查看转写" @click="$router.push(`/files/${f.id}`)">
                     <Icon name="play" :size="14" />
                   </button>
                   <button
@@ -188,38 +223,45 @@
         </table>
       </div>
 
-      <div v-if="total > limit" class="pager" style="padding: 10px 14px">
+      <div v-if="total > limit" class="pager" style="padding: 12px 16px; border-top: 1px solid var(--border)">
         <span class="small muted">共 {{ total }} 个</span>
-        <button class="btn sm" :disabled="offset === 0" @click="goPage(-1)">上一页</button>
-        <span class="small mono">{{ page }} / {{ pageCount }}</span>
-        <button class="btn sm" :disabled="offset + limit >= total" @click="goPage(1)">下一页</button>
+        <span class="spacer" />
+        <button class="btn sm ghost icon" :disabled="offset === 0" title="上一页" @click="goPage(-1)">
+          <Icon name="back" :size="14" />
+        </button>
+        <span class="pages">{{ page }} / {{ pageCount }}</span>
+        <button class="btn sm ghost icon" :disabled="offset + limit >= total" title="下一页" @click="goPage(1)">
+          <Icon name="chevron" :size="14" />
+        </button>
       </div>
     </div>
 
     <!-- 批量操作条 -->
     <div v-if="selected.size" class="batchbar">
-      <span>已选 <b>{{ selected.size }}</b> 个</span>
-      <button class="btn sm" @click="clearSelection">取消选择</button>
-      <span class="spacer" />
+      <span class="count">已选 <b>{{ selected.size }}</b> 个</span>
+      <span class="divider" style="width: 1px; height: 20px; margin: 0 2px" />
       <button class="btn sm" @click="enqueueSelected(false)">
         <Icon name="zap" :size="14" /> 开始转写
       </button>
-      <button class="btn sm" @click="enqueueSelected(true)">
+      <button class="btn sm ghost" @click="enqueueSelected(true)">
         <Icon name="refresh" :size="14" /> 重新转写
       </button>
-      <div class="row" style="gap: 0">
-        <button class="btn sm" @click="exportSelected('txt')">
+      <div class="row" style="gap: 6px">
+        <button class="btn sm ghost" @click="exportSelected('txt')">
           <Icon name="download" :size="14" /> 导出
         </button>
-        <select v-model="exportFmt" class="select sm" style="height: 28px; border-left: none; border-radius: 0 7px 7px 0" @change="exportSelected(exportFmt)">
+        <select v-model="exportFmt" class="select" style="height: 29px; font-size: 12.5px" @change="exportSelected(exportFmt)">
           <option value="txt">TXT</option>
           <option value="md">Markdown</option>
           <option value="srt">SRT</option>
           <option value="json">JSON</option>
         </select>
       </div>
-      <button class="btn sm danger" @click="removeSelected">
+      <button class="btn sm danger ghost" @click="removeSelected">
         <Icon name="trash" :size="14" /> 删除
+      </button>
+      <button class="btn sm ghost icon" title="取消选择" @click="clearSelection">
+        <Icon name="x" :size="14" />
       </button>
     </div>
   </div>
@@ -273,6 +315,18 @@ const tabs = computed(() =>
     return { ...t, count }
   }),
 )
+
+const hoursText = computed(() => (((store.stats?.total_seconds || 0) / 3600) || 0).toFixed(1))
+const todoCount = computed(() => {
+  const c = store.live?.files || {}
+  return (c.idle || 0) + (c.missing || 0)
+})
+const pendingText = computed(() => {
+  const q = store.live?.queue || {}
+  if (q.running) return '正在转写 1 个'
+  if (q.queued) return `${q.queued} 个排队中`
+  return '队列空闲'
+})
 
 const page = computed(() => Math.floor(offset.value / limit.value) + 1)
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
@@ -345,6 +399,10 @@ function toggleAllOnPage() {
   if (allOnPageSelected.value) items.value.forEach((f) => s.delete(f.id))
   else items.value.forEach((f) => s.add(f.id))
   selected.value = s
+}
+
+function openImport() {
+  store.ui.importOpen = true
 }
 
 function clearSelection() {

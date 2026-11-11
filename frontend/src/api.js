@@ -51,6 +51,9 @@ export const api = {
   listFiles: (params) => request(`/api/files${qs(params)}`),
   getFile: (id) => request(`/api/files/${id}`),
   scan: (dir) => request('/api/files/scan', { method: 'POST', body: dir ? { dir } : {} }),
+  importDir: (dir, mode) => request('/api/files/scan', { method: 'POST', body: { dir, mode } }),
+  library: () => request('/api/files/library'),
+  cancelImport: () => request('/api/files/import/cancel', { method: 'POST' }),
   batch: (ids, action, options) =>
     request('/api/files/batch', { method: 'POST', body: { ids, action, options } }),
   deleteFile: (id) => request(`/api/files/${id}`, { method: 'DELETE' }),

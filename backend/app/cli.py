@@ -66,11 +66,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     from .db import get_setting, init_db
-    from .services.scanner import scan
+    from .services import library
 
     init_db()
-    res = scan(args.dir or str(get_setting("input_dir")))
-    print(f"新增 {res['added']}，更新 {res['updated']}，缺失 {res['missing']}，共 {res['total']}")
+    root = args.dir or str(get_setting("input_dir"))
+    print(f"导入 {root} → {library.LIBRARY_DIR}")
+    res = library.import_dir(root, mode=str(get_setting("ingest_mode") or "copy"))
+    print(
+        f"导入 {res['added']} 个，跳过 {res['skipped']} 个（已在资料库），"
+        f"失败 {res['failed']} 个，共发现 {res['total']} 个音频"
+    )
     return 0
 
 

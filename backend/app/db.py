@@ -24,6 +24,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS files (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   rel_path    TEXT NOT NULL UNIQUE,
+  source_path TEXT,
   name        TEXT NOT NULL,
   ext         TEXT,
   size        INTEGER NOT NULL DEFAULT 0,

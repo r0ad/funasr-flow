@@ -4,24 +4,24 @@
 #   stage 1 (node:20-alpine)    → frontend/dist
 #   stage 2 (python:3.11-slim)  → 运行时镜像
 #
-# ── GPU 说明（重要）──────────────────────────────────────────────────────────
-# 本镜像装的是 PyTorch **CPU 版**（见第二阶段的 --index-url .../whl/cpu），
-# 适合"一台小服务器/家里旧机器，慢慢跑"的场景，镜像可以跨机器搬运。
-# 需要 GPU 加速时，本 Dockerfile 不能直接改一个 ARG 了事，做法是：
-#   1) 基础镜像换成 nvidia/cuda 系列，并自带 Python：
-#        FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
-#      （该镜像没有 python，需要 apt-get install python3.11 python3.11-venv python3-pip，
-#        并把下面的 python / pip 命令换成 python3.11 / python3.11 -m pip）
-#   2) torch 安装改为 CUDA 轮子，并把 .[asr] 的 torch 约束保持满足：
-#        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-#   3) 宿主机安装 NVIDIA 驱动 + nvidia-container-toolkit，
-#      并在 docker-compose.yml 里打开预留的 GPU 段（deploy.resources.reservations.devices）
-#   4) 容器内 device 设置保持默认 cuda:0（backend/app/config.py 的 DEFAULT_SETTINGS）
-# 只用 CPU 时，建议在前端设置页把 device 从 cuda:0 改成 cpu，
-# 虽然引擎会自动回退（funasr_engine._device 检测 torch.cuda.is_available），但显式设置更清晰。
+# ── GPU：两种镜像，一个 ARG 切换 ─────────────────────────────────────────────
+# 默认构建出来的是 **CPU 版**（torch 从 whl/cpu 装），任何机器都能跑；
+# 想用上宿主机的 NVIDIA 显卡，构建时换 CUDA 轮子即可（镜像会大 3~4 GB）：
+#
+#   docker build -t funasr-flow:0.1.0-gpu \
+#     --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .
+#   docker run --gpus all -p 8000:8000 -v funasr-data:/data -v funasr-cache:/cache funasr-flow:0.1.0-gpu
+#
+# 宿主机前置条件：装好 NVIDIA 驱动 + NVIDIA Container Toolkit（WSL2 里也能用），
+# 用 `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 先验证。
+# CUDA 版 torch 轮子会把需要的 cuda/cudnn 运行库一起装进镜像，所以基础镜像仍用 python:3.11-slim。
+# 容器里没加 --gpus all 时 torch.cuda.is_available() 为 False，引擎会自动回退 CPU
+# （funasr_engine._device），/api/health 的 gpu.hint 也会说明原因。
 #
 ARG NODE_IMAGE=node:20-alpine
 ARG PYTHON_IMAGE=python:3.11-slim
+# CPU：https://download.pytorch.org/whl/cpu ；CUDA 12.1：https://download.pytorch.org/whl/cu121
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 # ================================================================ stage 1: 前端
 FROM ${NODE_IMAGE} AS frontend-build
@@ -74,11 +74,11 @@ WORKDIR /app
 COPY pyproject.toml run.py README.md LICENSE llms.txt ./
 COPY backend ./backend
 
-# CPU 版 torch/torchaudio：先用 CPU 索引装好，后面 .[asr] 里的 torch>=2.1 已被满足，
-# 不会再从 PyPI 拉一份 ~2GB 的 CUDA 版。
+# torch/torchaudio 先按 TORCH_INDEX_URL 装好（默认 CPU 版），后面 .[asr] 里的 torch>=2.1
+# 已被满足，不会又去 PyPI 拉一份大轮子。想用 GPU 就 --build-arg TORCH_INDEX_URL=.../cu121
 RUN python -m pip install --upgrade pip \
- && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio \
- && python -m pip install -e ".[asr]" --extra-index-url https://download.pytorch.org/whl/cpu
+ && python -m pip install --index-url ${TORCH_INDEX_URL} torch torchaudio \
+ && python -m pip install -e ".[asr]"
 
 # 前端产物：FastAPI 在此路径托管静态文件（config.FRONTEND_DIST = ROOT/frontend/dist）
 COPY --from=frontend-build /build/frontend/dist ./frontend/dist

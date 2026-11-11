@@ -409,6 +409,21 @@ def test_safe_name_strips_path_and_requires_audio_ext() -> None:
         _safe_name("木马.exe")
 
 
+def test_health_gpu_hint_matches_environment(monkeypatch) -> None:
+    """GPU 不可用时的 hint 要分容器 / 宿主机两种说法，且给出可操作命令。"""
+    from backend.app.api import system
+
+    monkeypatch.setattr(system, "in_container", lambda: True)
+    container_hint = system.gpu_hint()
+    assert "--build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121" in container_hint
+    assert "--gpus all" in container_hint
+
+    monkeypatch.setattr(system, "in_container", lambda: False)
+    host_hint = system.gpu_hint()
+    assert "NVIDIA 驱动" in host_hint
+    assert "torch.cuda.is_available()" in host_hint
+
+
 def test_resolve_audio_accepts_absolute_rel_path(temp_db, tmp_path) -> None:
     """上传的录音以绝对路径入库，resolve_audio 要能直接用。"""
     audio = tmp_path / "上传的录音.m4a"

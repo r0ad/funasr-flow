@@ -11,6 +11,7 @@ export const store = reactive({
   speakers: [],
   toasts: [],
   reloadTick: 0, // 任何页面想让列表重拉时 +1
+  ui: { importOpen: false }, // 全局「导入录音」弹窗开关
 })
 
 let es = null

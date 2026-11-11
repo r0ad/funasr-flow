@@ -45,10 +45,10 @@ async def lifespan(app: FastAPI):
     ensure_dirs()
     init_db()
     # 补齐未知时长，让列表能显示时长（后台跑，不阻塞启动）
-    from .db import get_setting
+    from .config import LIBRARY_DIR
     from .services.scanner import start_auto_scan, start_duration_probe, stop_auto_scan
 
-    start_duration_probe(str(get_setting("input_dir")))
+    start_duration_probe(str(LIBRARY_DIR))
     start_auto_scan()
     _start_worker()
     yield

@@ -1,55 +1,71 @@
 <template>
-  <div class="stack" style="gap: 16px; max-width: 900px">
-    <div class="card card-pad">
-      <div class="search-wrap" style="width: 100%">
-        <Icon name="search" :size="16" />
+  <div class="stack" style="gap: 16px; max-width: 960px">
+    <!-- 搜索主区 -->
+    <div class="card" style="padding: 26px 26px 20px; position: relative; overflow: hidden">
+      <div
+        aria-hidden="true"
+        style="position: absolute; inset: -40% 40% auto -10%; height: 220px; border-radius: 50%;
+               background: radial-gradient(closest-side, var(--accent-weak), transparent); pointer-events: none"
+      />
+      <h1 style="font-size: 20px">搜一搜说过的话</h1>
+      <p class="desc muted" style="font-size: 12.5px; margin-top: 4px">
+        全文检索所有已转写的句子，点结果直接跳到那句话播放。
+      </p>
+      <div class="search-wrap" style="width: 100%; margin-top: 14px">
+        <Icon name="search" :size="17" />
         <input
           ref="inputEl"
           v-model="query"
           class="input search"
-          style="width: 100%; height: 42px; font-size: 15px"
-          placeholder="搜索说过的话，例如：钱、医院、寄过来、身份证…"
+          style="width: 100%; height: 46px; font-size: 15px; border-radius: 12px"
+          placeholder="例如：钱、医院、寄过来、身份证…"
           @input="onInput"
           @keydown.enter="run"
         />
       </div>
-      <div class="row wrap small muted" style="margin-top: 8px; gap: 6px">
-        <span>试试：</span>
+      <div class="row wrap" style="margin-top: 10px; gap: 6px">
+        <span class="small muted">试试</span>
         <button v-for="w in examples" :key="w" class="chip clickable" @click="useExample(w)">{{ w }}</button>
         <span class="spacer" />
-        <span v-if="searched">找到 {{ items.length }} 句</span>
+        <span v-if="searched" class="small muted">找到 {{ items.length }} 句</span>
       </div>
     </div>
 
     <div v-if="loading" class="empty">搜索中…</div>
 
     <div v-else-if="searched && !items.length" class="card empty">
+      <div class="art"><Icon name="search" :size="24" /></div>
       <h3>没有找到「{{ query }}」</h3>
-      <p class="small">只搜索已转写的录音。少于 3 个字的词会退化为模糊匹配。</p>
+      <p class="hint">只搜索已经转写的录音；少于 3 个字的词会退化成模糊匹配。</p>
     </div>
 
     <div v-else-if="groups.length" class="stack" style="gap: 12px">
-      <div v-for="g in groups" :key="g.file_id" class="card">
+      <div v-for="g in groups" :key="g.file_id" class="card flush">
         <div class="card-head">
           <Icon name="mic" :size="15" />
-          <RouterLink :to="`/files/${g.file_id}`" class="truncate" style="font-weight: 600; font-size: 13px">
-            {{ g.name }}
-          </RouterLink>
-          <span class="badge">{{ g.items.length }} 处</span>
+          <RouterLink :to="`/files/${g.file_id}`" class="truncate file-link">{{ g.name }}</RouterLink>
+          <span class="badge accent">{{ g.items.length }} 处</span>
           <span class="spacer" />
+          <Icon name="chevron" :size="14" class="muted" />
         </div>
-        <div style="padding: 4px 10px 10px">
+        <div style="padding: 6px 8px 8px">
           <div
             v-for="(it, i) in g.items"
             :key="i"
             class="hit"
             @click="openHit(g.file_id, it.start_ms)"
           >
-            <span class="mono muted small">{{ fmtClock(it.start_ms) }}</span>
+            <span class="mono muted small nowrap">{{ fmtClock(it.start_ms) }}</span>
             <span class="hit-text" v-html="highlight(it.text)"></span>
           </div>
         </div>
       </div>
+    </div>
+
+    <div v-else class="card empty">
+      <div class="art"><Icon name="zap" :size="24" /></div>
+      <h3>还没有搜索</h3>
+      <p class="hint">输入任意词开始，支持中文短语；结果按录音分组，点击跳到那句话。</p>
     </div>
   </div>
 </template>
@@ -137,16 +153,19 @@ onMounted(() => {
 <style scoped>
 .hit {
   display: flex;
-  gap: 10px;
-  padding: 7px 8px;
-  border-radius: 7px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 10px;
+  border-radius: 9px;
   cursor: pointer;
+  transition: background 0.14s var(--ease);
 }
 .hit:hover {
   background: var(--panel-2);
 }
 .hit-text {
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.65;
+  word-break: break-word;
 }
 </style>

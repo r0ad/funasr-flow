@@ -185,10 +185,16 @@ def _auto_scan_worker() -> None:
         last = time.time()
         try:
             root = str(get_setting("input_dir"))
-            res = scan(root)
-            log.info("定时扫描：%s", res)
-            if res["added"] or res["updated"] or res["missing"]:
-                start_duration_probe(root)
+            from . import library
+
+            if library.state().get("running"):
+                continue
+            res = library.import_dir(root)
+            log.info("定时导入：%s", res)
+            if res["added"]:
+                from ..config import LIBRARY_DIR
+
+                start_duration_probe(str(LIBRARY_DIR))
         except Exception as e:  # 定时任务失败不退出循环
             log.warning("定时扫描失败: %s", e)
 

@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from ..config import safe_unlink, temp_path
-from ..db import all_settings, get_conn, get_setting, tx
+from ..db import all_settings, get_conn, tx
+from .library import file_path
 
 PALETTE = ["#4C8DFF", "#FF7A59", "#22C55E", "#A855F7", "#EAB308", "#06B6D4", "#F43F5E", "#8B5CF6"]
 
@@ -141,7 +142,7 @@ def slice_embedding(file_id: int, start_ms: int, end_ms: int) -> np.ndarray:
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
         raise ValueError("文件不存在")
-    src = Path(str(get_setting("input_dir"))) / Path(row["rel_path"])
+    src = file_path(row["rel_path"])
     if not src.exists():
         raise ValueError("源文件已丢失")
     return embed_slice(src, start_ms, end_ms)

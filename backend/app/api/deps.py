@@ -11,7 +11,8 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..db import get_conn, get_setting
+from ..db import get_conn
+from ..services.library import file_path
 
 SPEAKER_COLORS = [
     "#4C8DFF",
@@ -52,11 +53,10 @@ def resolve_audio(file_id: int) -> Path:
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "文件不存在")
-    rel = Path(row["rel_path"])
-    # 上传的文件直接存绝对路径；扫描来的文件存相对 input_dir 的路径
-    path = rel if rel.is_absolute() else Path(str(get_setting("input_dir"))) / rel
+    # 资料库里的绝对路径；老库的相对路径兜底拼到资料库目录
+    path = file_path(row["rel_path"])
     if not path.exists():
-        raise HTTPException(410, "源文件已丢失")
+        raise HTTPException(410, "资料库里的文件已丢失")
     return path
 
 

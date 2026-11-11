@@ -8,12 +8,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from pathlib import Path
 
 import numpy as np
 
@@ -21,12 +21,28 @@ from ..config import OUT_DIR, TMP_DIR
 from ..db import get_conn, get_metric, get_setting, set_metric, tx
 from ..engines.base import AsrResult
 from ..engines.registry import get_engine, load_builtin
+from .library import file_path
 
 log = logging.getLogger(__name__)
 
 
 class Canceled(Exception):
     pass
+
+
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
+_MEANINGFUL = re.compile(r"[0-9A-Za-z\u4e00-\u9fff]")
+
+
+def clean_text(text: str) -> str:
+    """清掉模型在噪声上吐出的非法字符（孤立代理对、控制符），否则会污染 SQLite/JSON。"""
+    out = _SURROGATE.sub("", text or "")
+    out = "".join(ch for ch in out if ch >= " " or ch in "\n\t")
+    return out.strip()
+
+
+def meaningful_chars(text: str) -> int:
+    return len(_MEANINGFUL.findall(text or ""))
 
 
 def ffprobe_duration(path: str) -> float:
@@ -285,7 +301,7 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
         raise RuntimeError("文件记录不存在")
 
     cfg = _effective_cfg(job)
-    src = Path(str(get_setting("input_dir"))) / Path(file_row["rel_path"])
+    src = file_path(file_row["rel_path"])
     if not src.exists():
         raise RuntimeError(f"源文件不存在: {src}")
 
@@ -311,8 +327,8 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
         cancel_check()
         convert_to_wav(str(src), wav)
         cancel_check()
-        if duration <= 0.5 or _wav_seconds(wav) <= 0.5:
-            raise RuntimeError("音频为空或过短（<0.5 秒），已跳过")
+        if duration < 1.0 or _wav_seconds(wav) < 1.0:
+            raise RuntimeError("音频为空或过短（不足 1 秒），已跳过")
 
         # 2. 识别（含说话人分离）
         set_progress("asr", 0.06, "加载模型")
@@ -342,6 +358,13 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
         if duration >= 20:
             set_metric("rtf_est", min(max(0.7 * real_rtf + 0.3 * rtf, 0.01), 5.0))
 
+        # 清掉噪声字符，并把「一个有效字符都没有」的句子丢掉（极短音频常被模型硬凑一句话）
+        cleaned = []
+        for u in result.utterances:
+            u.text = clean_text(u.text)
+            if meaningful_chars(u.text) >= 1:
+                cleaned.append(u)
+        result.utterances = cleaned
         if not result.utterances:
             # 空结果不是"转写成功"：多半是静音、纯音乐或短到 VAD 都不分段
             raise RuntimeError("没有检测到语音：这条录音可能是静音、纯音乐或过短")

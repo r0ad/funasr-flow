@@ -101,7 +101,7 @@
 
         <div class="picker-list">
           <div v-if="!data.entries.length" class="picker-empty">
-            这个目录下没有子文件夹。如果录音就放在当前目录，直接点右下角「用这个目录」。
+            这个目录下没有子文件夹。如果录音就放在当前目录，直接点右下角「导入这个目录」。
           </div>
           <button
             v-for="e in data.entries"
@@ -122,13 +122,14 @@
     <template #footer>
       <div class="picker-foot">
         <span class="small">
-          本目录有 <b>{{ data.audio || 0 }}</b> 个录音 ·
+          <b>{{ data.audio || 0 }}</b> 个录音会复制进资料库 ·
           {{ data.path || '—' }}
         </span>
         <span class="spacer" />
         <button class="btn" @click="emit('close')">取消</button>
         <button class="btn primary" :disabled="busy" @click="pick">
-          {{ busy ? '扫描中…' : '用这个目录' }}
+          <Icon name="download" :size="15" />
+          {{ busy ? '导入中…' : '导入这个目录' }}
         </button>
       </div>
     </template>
@@ -260,8 +261,13 @@ async function pick() {
   if (!data.path) return
   busy.value = true
   try {
-    const res = await api.scan(data.path)
-    toast(`已切换到 ${data.path}：新增 ${res.added} 个，共 ${res.total} 个录音`, 'ok')
+    const res = await api.importDir(data.path)
+    if (res.importing) {
+      toast(`开始导入 ${data.path}，进度见右下角`, 'ok')
+    } else {
+      const n = res.import?.added ?? 0
+      toast(`已导入 ${n} 个录音（已在库里的会跳过）`, 'ok')
+    }
     store.reloadTick++
     emit('picked', data.path)
     emit('close')

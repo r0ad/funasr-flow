@@ -1,176 +1,188 @@
 <template>
-  <div class="stack" style="gap: 14px">
-    <!-- 头部信息 -->
-    <div class="card card-pad">
-      <div class="row wrap" style="gap: 12px">
-        <button class="btn ghost icon sm" title="返回列表" @click="$router.push('/')">
-          <Icon name="arrowLeft" :size="16" />
-        </button>
-        <div style="min-width: 220px; flex: 1">
-          <div style="font-weight: 650; word-break: break-all">{{ file?.name || '加载中…' }}</div>
-          <div class="row wrap small muted" style="gap: 10px; margin-top: 2px">
-            <span v-if="file?.duration"><Icon name="clock" :size="12" /> {{ fmtDuration(file.duration) }}</span>
-            <span v-if="transcript?.model">模型 {{ transcript.model }}</span>
-            <span v-if="transcript?.asr_ms">识别耗时 {{ (transcript.asr_ms / 1000).toFixed(1) }}s</span>
-            <span>{{ segments.length }} 句 · {{ speakers.length }} 位说话人</span>
-            <span v-if="file?.status && file.status !== 'done'" class="badge" :class="STATUS_META[file.status]?.tone">
-              {{ STATUS_META[file.status]?.label }}
-            </span>
-          </div>
+  <div class="stack" style="gap: 16px">
+    <!-- 头部 -->
+    <div class="card detail-head">
+      <button class="btn ghost icon" title="返回录音库" @click="$router.push('/')">
+        <Icon name="arrowLeft" :size="16" />
+      </button>
+      <div style="min-width: 0; flex: 1">
+        <div class="file-title truncate">{{ file?.name || '加载中…' }}</div>
+        <div class="meta">
+          <span v-if="file?.duration"><Icon name="clock" :size="12" /> {{ fmtDuration(file.duration) }}</span>
+          <span v-if="transcript?.model" class="truncate" style="max-width: 320px">模型 {{ transcript.model }}</span>
+          <span v-if="transcript?.asr_ms">识别 {{ (transcript.asr_ms / 1000).toFixed(1) }}s</span>
+          <span>{{ segments.length }} 句</span>
+          <span>{{ speakers.length }} 位说话人</span>
+          <span v-if="file?.status && file.status !== 'done'" class="badge" :class="STATUS_META[file.status]?.tone">
+            {{ STATUS_META[file.status]?.label }}
+          </span>
         </div>
-        <div class="row" style="gap: 6px">
-          <select v-model="exportFmt" class="select" style="height: 34px">
+      </div>
+      <div class="row" style="gap: 8px">
+        <label class="spknum" title="这通电话里有几个人说话？指定后重新转写会按人数收敛">
+          人数
+          <select v-model.number="spkNum" class="select" style="height: 34px">
+            <option :value="0">自动</option>
+            <option :value="2">2 人</option>
+            <option :value="3">3 人</option>
+            <option :value="4">4 人</option>
+          </select>
+        </label>
+        <button class="btn" :disabled="retranscribing" @click="retranscribe">
+          <Icon name="refresh" :size="15" /> {{ retranscribing ? '已排队' : '重新转写' }}
+        </button>
+        <div class="row" style="gap: 0">
+          <select v-model="exportFmt" class="select" style="border-radius: 9px 0 0 9px; border-right: none">
             <option value="txt">TXT</option>
             <option value="md">Markdown</option>
             <option value="srt">SRT 字幕</option>
             <option value="json">JSON</option>
           </select>
-          <button class="btn" :disabled="!segments.length" @click="doExport">
+          <button class="btn" style="border-radius: 0 9px 9px 0" :disabled="!segments.length" @click="doExport">
             <Icon name="download" :size="15" /> 导出
-          </button>
-          <label class="spknum" title="这通电话里有几个人说话？指定后重新转写会按人数收敛，识别不准时很有用">
-            人数
-            <select v-model.number="spkNum">
-              <option :value="0">自动</option>
-              <option :value="2">2 人</option>
-              <option :value="3">3 人</option>
-              <option :value="4">4 人</option>
-            </select>
-          </label>
-          <button class="btn" :disabled="retranscribing" @click="retranscribe">
-            <Icon name="refresh" :size="15" /> {{ retranscribing ? '已排队' : '重新转写' }}
           </button>
         </div>
       </div>
     </div>
 
+    <!-- 空态 -->
     <div v-if="!segments.length" class="card empty">
+      <div class="art">
+        <Icon :name="file?.status === 'failed' ? 'alert' : 'mic'" :size="26" />
+      </div>
       <template v-if="file?.status === 'failed'">
         <h3>转写失败</h3>
-        <p class="small">{{ file?.error || '这条录音没有转写成功，可以重新试一次。' }}</p>
+        <p class="hint">{{ file?.error || '这条录音没有转写成功，可以重新试一次。' }}</p>
       </template>
       <template v-else-if="file?.status === 'done'">
         <h3>没有检测到语音</h3>
-        <p class="small">
-          这条录音已经跑过识别，但没有分出一句话（可能是静音、纯音乐，或者短到 VAD 都不分段）。
-        </p>
+        <p class="hint">已经跑过识别，但没有分出一句话（可能是静音、纯音乐，或者短到 VAD 都不分段）。</p>
       </template>
       <template v-else>
         <h3>还没有转写结果</h3>
-        <p class="small">把这条录音加入队列，识别完成后自动出现在这里。</p>
+        <p class="hint">把这条录音加入队列，识别完成后文字稿会自动出现在这里。</p>
       </template>
-      <button class="btn primary" style="margin-top: 14px" @click="enqueue">
+      <button class="btn primary" style="margin-top: 16px" @click="enqueue">
         <Icon name="zap" :size="15" /> 开始转写
       </button>
     </div>
 
     <div v-else class="detail-layout">
-      <!-- 左栏：播放器 + 说话人 -->
-      <div class="stack">
+      <!-- 左栏 -->
+      <div class="stack" style="gap: 14px">
         <div class="player">
-          <audio
-            ref="audioEl"
-            :src="audioSrc"
-            controls
-            preload="metadata"
-            @timeupdate="onTimeUpdate"
-            @loadedmetadata="onLoaded"
-          />
-          <div class="times muted">
-            <span class="mono">{{ fmtClock(currentMs) }}</span>
-            <div class="row" style="gap: 4px">
+          <div class="row" style="align-items: baseline">
+            <span class="big-time">{{ fmtClock(currentMs) }}<small>/ {{ fmtClock(durationMs) }}</small></span>
+            <span class="spacer" />
+            <div class="rate">
               <button
                 v-for="r in [0.75, 1, 1.25, 1.5]"
                 :key="r"
-                class="btn ghost sm"
-                :class="{ primary: rate === r }"
-                style="height: 22px; padding: 0 6px"
+                :class="{ on: rate === r }"
                 @click="setRate(r)"
               >
                 {{ r }}×
               </button>
             </div>
           </div>
+          <audio
+            ref="audioEl"
+            :src="audioSrc"
+            controls
+            preload="metadata"
+            style="width: 100%; margin-top: 10px; height: 36px"
+            @timeupdate="onTimeUpdate"
+            @loadedmetadata="onLoaded"
+          />
         </div>
 
-        <div class="card">
+        <div class="card flush">
           <div class="card-head">
             <Icon name="users" :size="15" />
-            <span style="font-weight: 600; font-size: 13px">说话人</span>
+            说话人
             <span class="spacer" />
-            <span class="small muted">点击筛选</span>
+            <span v-if="filterCluster" class="badge accent">只看一人</span>
+            <span v-else class="small muted">点击放大镜筛选</span>
           </div>
           <div class="card-pad" style="padding: 12px">
-            <div v-for="s in speakers" :key="s.cluster" class="speaker-card" style="flex-direction: column; align-items: stretch; gap: 6px">
-              <div class="row">
-                <span class="speaker-dot" :style="{ background: s.color }" />
-                <input
-                  class="input"
-                  style="height: 26px; font-size: 12.5px; flex: 1; min-width: 0"
-                  :value="s.name"
-                  :title="s.cluster"
-                  @change="renameSpeaker(s, $event.target.value)"
-                />
-                <span class="small muted nowrap">{{ Math.round(s.seconds || 0) }}s</span>
-              </div>
-              <div class="row small">
+            <div v-for="s in speakers" :key="s.cluster" class="speaker-card">
+              <span class="avatar" :style="{ background: s.color }">{{ initial(s.name) }}</span>
+              <div class="who">
+                <div class="row" style="gap: 6px">
+                  <input
+                    class="input"
+                    style="height: 30px; font-size: 13px; font-weight: 560"
+                    :value="s.name"
+                    :title="s.cluster"
+                    @change="renameSpeaker(s, $event.target.value)"
+                  />
+                  <span class="dur nowrap">{{ Math.round(s.seconds || 0) }}s</span>
+                </div>
+                <div class="row" style="gap: 4px; margin-top: 7px">
+                  <select
+                    class="select"
+                    style="height: 28px; font-size: 12px; flex: 1; min-width: 0"
+                    :value="s.speaker_id || ''"
+                    @change="bindSpeaker(s, $event.target.value)"
+                  >
+                    <option value="">未绑定声纹</option>
+                    <option v-for="sp in store.speakers" :key="sp.id" :value="sp.id">
+                      {{ sp.name }}{{ sp.has_embedding ? '' : '（无声纹）' }}
+                    </option>
+                  </select>
+                  <button class="btn ghost icon sm" title="登记声纹" @click="enroll(s)">
+                    <Icon name="plus" :size="13" />
+                  </button>
+                  <button
+                    class="btn ghost icon sm"
+                    :class="{ active: filterCluster === s.cluster }"
+                    title="只看这个人"
+                    @click="filterCluster = filterCluster === s.cluster ? null : s.cluster"
+                  >
+                    <Icon name="search" :size="13" />
+                  </button>
+                  <button class="btn ghost icon sm" title="试听（跳到第一句）" @click="previewCluster(s)">
+                    <Icon name="play" :size="13" />
+                  </button>
+                </div>
                 <select
+                  v-if="speakers.length > 1"
                   class="select"
-                  style="height: 26px; font-size: 12px; flex: 1; min-width: 0"
-                  :value="s.speaker_id || ''"
-                  @change="bindSpeaker(s, $event.target.value)"
+                  style="height: 26px; font-size: 11.5px; color: var(--muted); margin-top: 7px; width: 100%"
+                  :value="''"
+                  title="把这个人并进另一个人（收拾过聚类）"
+                  @change="mergeSpeaker(s, $event.target.value, $event)"
                 >
-                  <option value="">未绑定声纹</option>
-                  <option v-for="sp in store.speakers" :key="sp.id" :value="sp.id">
-                    {{ sp.name }}{{ sp.has_embedding ? '' : '（无声纹）' }}
+                  <option value="">合并到…</option>
+                  <option
+                    v-for="o in speakers.filter((x) => x.cluster !== s.cluster)"
+                    :key="o.cluster"
+                    :value="o.cluster"
+                  >
+                    {{ o.name }}
                   </option>
                 </select>
-                <button class="btn sm ghost" title="把这段声音登记进声纹库" @click="enroll(s)">
-                  <Icon name="plus" :size="13" />
-                </button>
-                <button
-                  class="btn sm ghost"
-                  :class="{ primary: filterCluster === s.cluster }"
-                  title="只看这个人说的话"
-                  @click="filterCluster = filterCluster === s.cluster ? null : s.cluster"
-                >
-                  <Icon name="search" :size="13" />
-                </button>
-                <button class="btn sm ghost" title="试听这个人（跳到第一句）" @click="previewCluster(s)">
-                  <Icon name="play" :size="13" />
-                </button>
               </div>
-              <select
-                v-if="speakers.length > 1"
-                class="select"
-                style="height: 24px; font-size: 11.5px; color: var(--muted)"
-                :value="''"
-                title="把这个人并进另一个人（收拾过聚类）"
-                @change="mergeSpeaker(s, $event.target.value, $event)"
-              >
-                <option value="">合并到…</option>
-                <option v-for="o in speakers.filter((x) => x.cluster !== s.cluster)" :key="o.cluster" :value="o.cluster">
-                  {{ o.name }}
-                </option>
-              </select>
             </div>
             <p v-if="!speakers.length" class="small muted">未检测到说话人</p>
           </div>
         </div>
       </div>
 
-      <!-- 右栏：逐句稿 -->
-      <div class="card" style="overflow: hidden">
+      <!-- 右栏 -->
+      <div class="card flush">
         <div class="card-head">
-          <span style="font-weight: 600; font-size: 13px">文字稿</span>
-          <span class="small muted">单击文字可编辑，回车保存</span>
+          文字稿
+          <span class="small muted">单击文字编辑，回车保存</span>
           <span class="spacer" />
-          <span v-if="filterCluster" class="badge accent">
-            筛选中 <button class="btn ghost sm" style="height: 18px" @click="filterCluster = null">清除</button>
-          </span>
-          <button class="btn sm ghost" title="复制全文" @click="copyAll">复制</button>
+          <button v-if="filterCluster" class="btn sm ghost" @click="filterCluster = null">
+            <Icon name="x" :size="13" /> 清除筛选
+          </button>
+          <button class="btn sm ghost" title="复制全文" @click="copyAll">
+            <Icon name="copy" :size="14" /> 复制
+          </button>
         </div>
-        <div style="max-height: calc(100vh - 250px); overflow: auto; padding: 8px 10px">
+        <div class="transcript" style="max-height: calc(100vh - 290px); overflow: auto">
           <div
             v-for="seg in visibleSegments"
             :key="seg.idx"
@@ -182,11 +194,7 @@
               <span class="time" @click="seek(seg.start_ms)">{{ fmtClock(seg.start_ms) }}</span>
               <span class="row" style="gap: 4px">
                 <span class="speaker-dot" :style="{ background: colorOf(seg.speaker) }" />
-                <select
-                  class="sel-inline"
-                  :value="seg.speaker"
-                  @change="changeSpeaker(seg, $event.target.value)"
-                >
+                <select class="sel-inline" :value="seg.speaker" @change="changeSpeaker(seg, $event.target.value)">
                   <option v-for="s in speakers" :key="s.cluster" :value="s.cluster">{{ s.name }}</option>
                 </select>
               </span>
@@ -197,20 +205,12 @@
                 v-if="editingIdx === seg.idx"
                 ref="editBox"
                 v-model="editText"
-                class="textarea"
-                style="width: 100%; font-size: 14px"
                 rows="2"
                 @blur="saveEdit(seg)"
                 @keydown.enter.exact.prevent="saveEdit(seg)"
                 @keydown.esc.prevent="cancelEdit"
               />
-              <div
-                v-else
-                class="text"
-                title="单击编辑"
-                @click="startEdit(seg)"
-                v-html="highlight(seg.text)"
-              />
+              <div v-else class="text" title="单击编辑" @click="startEdit(seg)" v-html="highlight(seg.text)" />
             </div>
           </div>
           <div v-if="!visibleSegments.length" class="empty small">这个人没有说话</div>
@@ -261,6 +261,13 @@ const query = computed(() => String(route.query.q || ''))
 const visibleSegments = computed(() =>
   filterCluster.value ? segments.value.filter((s) => s.speaker === filterCluster.value) : segments.value,
 )
+
+function initial(name) {
+  const t = String(name || '').trim()
+  if (!t) return '?'
+  // 中文取第一个字，英文取首字母
+  return /[a-zA-Z]/.test(t[0]) ? t[0].toUpperCase() : t[0]
+}
 
 function colorOf(cluster) {
   return speakers.value.find((s) => s.cluster === cluster)?.color || 'var(--muted)'

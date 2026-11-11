@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from ..config import CACHE_DIR, DEFAULT_SETTINGS, MODEL_CHOICES, ROOT
 from ..db import all_settings, get_conn, get_metric, set_setting
+from ..services import library
 from ..services import queue as q
 from ..services.scanner import AUDIO_EXTS
 
@@ -191,6 +192,20 @@ def get_setting_safe(key: str) -> Any:
 
 
 # ------------------------------------------------------------------ 健康
+def gpu_hint() -> str:
+    """GPU 不可用时给一句可操作的中文说明：容器里的常见原因和宿主机不一样。"""
+    if in_container():
+        return (
+            "容器里没检测到 GPU：镜像可能是 CPU 版（用 "
+            "--build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 重新构建），"
+            "或启动时没加 --gpus all"
+        )
+    return (
+        "没检测到 CUDA：请确认已装 NVIDIA 驱动，且 PyTorch 是 CUDA 版"
+        "（torch.cuda.is_available() 为 False）"
+    )
+
+
 @router.get("/health")
 def health() -> dict:
     import importlib.util
@@ -198,18 +213,22 @@ def health() -> dict:
     def has_dep(name: str) -> bool:
         return importlib.util.find_spec(name) is not None
 
-    gpu = {"available": False, "name": None, "vram_mb": None}
+    # 键结构保持稳定：hint 只在没有 GPU 时带内容，有 GPU 时为 None。
+    gpu = {"available": False, "name": None, "vram_mb": None, "torch_cuda": False, "hint": None}
     try:
         import torch
 
         if torch.cuda.is_available():
-            gpu = {
-                "available": True,
-                "name": torch.cuda.get_device_name(0),
-                "vram_mb": int(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024),
-            }
+            gpu["torch_cuda"] = True
+            gpu.update(
+                available=True,
+                name=torch.cuda.get_device_name(0),
+                vram_mb=int(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024),
+            )
     except Exception:
         pass
+    if not gpu["available"]:
+        gpu["hint"] = gpu_hint()
 
     from ..engines.registry import list_engines, load_builtin
 
@@ -277,6 +296,7 @@ def snapshot() -> dict:
     return {
         "queue": q.queue_stats(),
         "files": by_status,
+        "import": library.state(),
         "active": dict(active) if active else None,
         "worker_age": round(time.time() - get_metric("worker_heartbeat", 0.0), 1)
         if get_metric("worker_heartbeat", 0.0)

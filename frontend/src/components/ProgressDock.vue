@@ -8,7 +8,30 @@
     @pointerdown="startDrag"
     @dblclick="resetPos"
   >
-    <template v-if="active">
+    <template v-if="importing">
+      <div class="dock-head">
+        <span class="badge warn"><span class="bullet" />导入中</span>
+        <span class="spacer" />
+        <button class="btn ghost icon sm" title="收起" @click="dismissed = true">
+          <Icon name="x" :size="14" />
+        </button>
+      </div>
+      <div class="dock-name truncate" :title="imp.dir">{{ imp.current || imp.dir }}</div>
+      <div class="row small muted" style="justify-content: space-between">
+        <span>{{ imp.done || 0 }} / {{ imp.total || 0 }} 个文件</span>
+        <span class="mono">{{ importPct }}%</span>
+      </div>
+      <div class="bar" style="margin: 6px 0 8px">
+        <span :style="{ width: `${importPct}%` }" />
+      </div>
+      <div class="row small muted">
+        <span>新增 {{ imp.added || 0 }} · 跳过 {{ imp.skipped || 0 }}</span>
+        <span class="spacer" />
+        <button class="btn sm danger" @click="cancelImport">停止</button>
+      </div>
+    </template>
+
+    <template v-else-if="active">
       <div class="dock-head">
         <span class="badge accent"><span class="bullet" />转写中</span>
         <span class="spacer" />
@@ -133,6 +156,12 @@ window.addEventListener('resize', () => {
   if (pos.value) pos.value = clamp(pos.value)
 })
 const active = computed(() => store.live?.active || null)
+const imp = computed(() => store.live?.import || {})
+const importing = computed(() => Boolean(imp.value?.running))
+const importPct = computed(() => {
+  const t = imp.value?.total || 0
+  return t ? Math.min(100, Math.round(((imp.value?.done || 0) / t) * 100)) : 0
+})
 const queue = computed(() => store.live?.queue || {})
 
 // 新任务开始后重新显示
@@ -145,7 +174,7 @@ watch(
 
 const visible = computed(() => {
   if (dismissed.value) return false
-  return Boolean(active.value) || (queue.value.queued || 0) > 0
+  return Boolean(active.value) || Boolean(importing.value) || (queue.value.queued || 0) > 0
 })
 
 const stageLabel = computed(() => STAGE_META[active.value?.stage] || '处理中')
@@ -156,6 +185,15 @@ const etaText = computed(() => {
   if (!rtf || !secs) return ''
   return fmtDuration(secs * rtf)
 })
+
+async function cancelImport() {
+  try {
+    await api.cancelImport()
+    toast('已请求取消导入', 'ok')
+  } catch (e) {
+    toast(e.message, 'err')
+  }
+}
 
 async function cancelAll() {
   try {

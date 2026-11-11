@@ -15,7 +15,8 @@ DATA_DIR = Path(os.environ.get("FLOW_DATA_DIR", ROOT / "data"))
 OUT_DIR = DATA_DIR / "transcripts"
 CACHE_DIR = Path(os.environ.get("FLOW_CACHE_DIR", ROOT / ".cache"))
 TMP_DIR = CACHE_DIR / "tmp"
-UPLOAD_DIR = DATA_DIR / "uploads"  # 界面上传的录音落在这里（应用自己管理的目录）
+LIBRARY_DIR = DATA_DIR / "library"  # 导入/上传的录音都复制到这里（应用自己管理，跟着 /data 卷走）
+UPLOAD_DIR = LIBRARY_DIR  # 旧名字保留，上传直接落资料库
 DB_PATH = DATA_DIR / "flow.db"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
@@ -40,6 +41,7 @@ DEFAULT_SETTINGS = {
     "absorb_threshold": 0.45,  # 碎片簇（噪声/短句）被吸收的最低相似度
     "absorb_max_seconds": 6.0,  # 累计时长不超过此值（且 ≤3 句）才算碎片簇
     "concurrency": 1,  # GPU 串行，勿改
+    "ingest_mode": "copy",  # 导入方式：copy=复制进资料库（默认）；link=硬链接（同一磁盘时才生效）
     "keep_wav": False,
     "auto_scan_minutes": 0,  # 0 = 关闭定时扫描
 }
@@ -84,5 +86,5 @@ def safe_unlink(path: Path) -> None:
 
 
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, OUT_DIR, CACHE_DIR, TMP_DIR, UPLOAD_DIR):
+    for d in (DATA_DIR, OUT_DIR, CACHE_DIR, TMP_DIR, LIBRARY_DIR):
         d.mkdir(parents=True, exist_ok=True)

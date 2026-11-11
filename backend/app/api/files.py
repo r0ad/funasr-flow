@@ -1,4 +1,4 @@
-"""文件库相关接口：扫描、分页列表、音频流、批量操作。"""
+"""文件库相关接口：导入、分页列表、音频流、批量操作。"""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from ..config import UPLOAD_DIR
+from ..config import LIBRARY_DIR
 from ..db import get_conn, get_setting, tx
+from ..services import library
 from ..services import queue as q
 from ..services.scanner import AUDIO_EXTS
-from ..services.scanner import scan as scan_dir
 from .deps import file_dict, resolve_audio, speaker_color, stream_audio
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -48,12 +48,7 @@ async def upload(request: Request, name: str = Query(..., description="原始文
     """
     filename = _safe_name(name)
     # 若传了子目录（界面上传时保留用户选的相对路径），只取最后一段，避免目录穿越
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    target = UPLOAD_DIR / filename
-    n = 2
-    while target.exists():
-        target = UPLOAD_DIR / f"{Path(filename).stem} ({n}){Path(filename).suffix}"
-        n += 1
+    target = library.unique_target(filename)
 
     size = 0
     try:
@@ -147,6 +142,12 @@ def list_files(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/library")
+def library_info() -> dict:
+    """资料库概况（文件数/占用）+ 当前导入进度。必须注册在 `/{file_id}` 之前，否则被它吃掉。"""
+    return {"ok": True, **library.stats(), "import": library.state()}
+
+
 @router.get("/{file_id}")
 def get_file(file_id: int) -> dict:
     conn = get_conn()
@@ -185,23 +186,42 @@ def get_audio(file_id: int, request: Request):
 
 class ScanBody(BaseModel):
     dir: str | None = None
+    mode: str | None = None  # copy（默认）| link
 
 
 @router.post("/scan")
 def do_scan(body: ScanBody | None = None) -> dict:
-    root = (body.dir if body and body.dir else None) or str(get_setting("input_dir"))
+    """导入一个目录里的录音到资料库（后台跑，进度看 /api/state 的 import 字段）。
+
+    传 ``dir`` = 从该目录导入；不传 = 重新扫一遍资料库（发现被手工删掉的文件）。
+    """
     if body and body.dir:
         from ..db import set_setting
 
+        root = Path(body.dir).expanduser()
+        # 先同步确认目录存在：start_import 是后台线程，异常只会写进 import.error
+        if not root.is_dir():
+            raise HTTPException(400, f"目录不存在：{body.dir}")
+        body.dir = str(root)
         set_setting("input_dir", body.dir)
-    try:
-        result = scan_dir(root)
-    except FileNotFoundError as e:
-        raise HTTPException(400, str(e)) from e
+        mode = (body.mode or str(get_setting("ingest_mode") or "copy")).lower()
+        res = library.start_import(body.dir, mode)
+        if not res.get("started"):
+            raise HTTPException(409, res.get("reason") or "已有导入任务在跑")
+        state = library.state()
+        return {"ok": True, "importing": bool(state.get("running")), "root": body.dir, "import": state}
+
+    result = library.rescan()
     from ..services.scanner import start_duration_probe
 
-    start_duration_probe(root)
-    return {"ok": True, "root": root, **result}
+    start_duration_probe(str(LIBRARY_DIR))
+    return {"ok": True, "root": str(LIBRARY_DIR), **result}
+
+
+@router.post("/import/cancel")
+def cancel_import() -> dict:
+    library.cancel_import()
+    return {"ok": True, "import": library.state()}
 
 
 class BatchBody(BaseModel):
@@ -232,8 +252,8 @@ def batch(body: BatchBody) -> dict:
 
 @router.delete("/{file_id}")
 def delete_file(file_id: int, purge: bool = True) -> dict:
-    """删除记录。上传到 data/uploads/ 的文件是本应用自己的副本，默认一并删掉；
-    扫描进来的原始录音永远不动（那是用户的手机文件）。"""
+    """删除记录。资料库（data/library）里的副本是本应用自己的文件，默认一并删掉；
+    用户原始目录里的录音永远不动。"""
     conn = get_conn()
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
@@ -244,7 +264,7 @@ def delete_file(file_id: int, purge: bool = True) -> dict:
     removed = False
     if purge:
         try:
-            if path.is_absolute() and path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+            if library.is_in_library(path):
                 path.unlink(missing_ok=True)
                 removed = True
         except OSError:

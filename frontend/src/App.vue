@@ -1,43 +1,61 @@
 <template>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand">
+      <RouterLink to="/" class="brand">
         <div class="brand-mark">
           <Icon name="mic" :size="17" />
         </div>
         <div>
           <div class="brand-name">FunASR Flow</div>
-          <div class="brand-sub">本地录音转写</div>
+          <div class="brand-sub">本地通话转写</div>
         </div>
-      </div>
-
-      <RouterLink v-for="item in nav" :key="item.to" :to="item.to" class="nav-item">
-        <Icon :name="item.icon" :size="17" />
-        <span>{{ item.label }}</span>
-        <span v-if="item.badge" class="badge badge-count">{{ item.badge }}</span>
       </RouterLink>
 
+      <template v-for="group in navGroups" :key="group.title">
+        <div class="nav-group">{{ group.title }}</div>
+        <RouterLink
+          v-for="item in group.items"
+          :key="item.to"
+          :to="item.to"
+          class="nav-item"
+          :class="{ active: isActive(item) }"
+        >
+          <Icon :name="item.icon" :size="17" />
+          <span>{{ item.label }}</span>
+          <span v-if="item.badge" class="badge accent badge-count">{{ item.badge }}</span>
+        </RouterLink>
+      </template>
+
       <div class="sidebar-foot">
-        <span class="dot" :style="{ background: connColor }" />
-        {{ connText }}
-        <div v-if="store.stats" style="margin-top: 6px">
+        <span>
+          <span class="dot" :style="{ background: connColor }" />
+          {{ connText }}
+        </span>
+        <span v-if="store.stats" class="truncate">
           已转写 {{ store.stats.done_files ?? 0 }}/{{ store.stats.files ?? 0 }} 个 ·
           {{ store.stats.segments ?? 0 }} 句
-        </div>
+        </span>
       </div>
     </aside>
 
     <div class="main">
       <header class="topbar">
         <div class="topbar-title">
-          <h1>{{ title }}</h1>
-          <span class="sub">{{ subtitle }}</span>
+          <span class="title">{{ title }}</span>
+          <span class="sub truncate">{{ subtitle }}</span>
         </div>
         <div class="spacer" />
-        <button class="btn sm" :disabled="scanning" @click="pickerOpen = true">
+        <router-link v-if="route.name === 'detail'" to="/" class="btn sm ghost">
+          <Icon name="back" :size="15" />
+          录音库
+        </router-link>
+        <button class="btn sm" @click="pickerOpen = true">
           <Icon name="folder" :size="15" />
-          {{ scanning ? '扫描中…' : '选录音目录' }}
+          导入录音
         </button>
+        <router-link to="/settings" class="btn sm ghost icon" title="设置">
+          <Icon name="settings" :size="16" />
+        </router-link>
       </header>
 
       <div class="content">
@@ -52,36 +70,52 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import DirPicker from './components/DirPicker.vue'
 import Icon from './components/Icon.vue'
 import ProgressDock from './components/ProgressDock.vue'
 import Toasts from './components/Toasts.vue'
-import { api } from './api'
-import { fmtDuration, refreshHealth, refreshStats, store, toast } from './store'
+import { fmtDuration, refreshHealth, refreshStats, store } from './store'
 
 const route = useRoute()
-const scanning = ref(false)
-const pickerOpen = ref(false)
+const pickerOpen = computed({
+  get: () => store.ui.importOpen,
+  set: (v) => {
+    store.ui.importOpen = v
+  },
+})
 
-const nav = computed(() => {
+const navGroups = computed(() => {
   const pending = store.live?.queue?.queued || 0
   return [
-    { to: '/', label: '录音库', icon: 'files', badge: pending || null },
-    { to: '/search', label: '全文搜索', icon: 'search' },
-    { to: '/speakers', label: '声纹库', icon: 'users' },
-    { to: '/settings', label: '设置', icon: 'settings' },
+    {
+      title: '资料',
+      items: [
+        { to: '/', label: '录音库', icon: 'files', badge: pending || null },
+        { to: '/search', label: '全文搜索', icon: 'search' },
+        { to: '/speakers', label: '声纹库', icon: 'users' },
+      ],
+    },
+    {
+      title: '系统',
+      items: [{ to: '/settings', label: '设置', icon: 'settings' }],
+    },
   ]
 })
+
+function isActive(item) {
+  if (item.to === '/') return route.name === 'files' || route.name === 'detail'
+  return route.path.startsWith(item.to)
+}
 
 const title = computed(() => route.meta?.title || 'FunASR Flow')
 const subtitle = computed(() => {
   if (route.name === 'files') return libSubtitle.value
   if (route.name === 'detail') return '点击时间码跳转播放，文字可直接编辑'
-  if (route.name === 'search') return '在所有已转写的句子中查找'
-  if (route.name === 'speakers') return '声纹用于跨文件自动识别同一个人'
-  if (route.name === 'settings') return '模型、目录与识别参数'
+  if (route.name === 'search') return '在所有已转写的句子里查找'
+  if (route.name === 'speakers') return '声纹用于跨录音自动认出同一个人'
+  if (route.name === 'settings') return '模型、资料库与识别参数'
   return ''
 })
 
@@ -103,21 +137,6 @@ const connColor = computed(() =>
 function onDirPicked() {
   refreshStats()
   store.reloadTick++
-}
-
-async function doScan() {
-  scanning.value = true
-  try {
-    const res = await api.scan()
-    const parts = [`新增 ${res.added}`, `更新 ${res.updated}`, `缺失 ${res.missing}`]
-    toast(`扫描完成：${parts.join('，')}，共 ${res.total} 个文件`, 'ok')
-    refreshStats()
-  } catch (e) {
-    toast(e.message, 'err')
-  } finally {
-    scanning.value = false
-    store.reloadTick++
-  }
 }
 
 onMounted(() => {

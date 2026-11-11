@@ -1,11 +1,13 @@
 <template>
   <div class="stack" style="gap: 16px">
-    <div class="card card-pad">
+    <div class="card" style="padding: 18px 20px">
       <div class="row wrap" style="gap: 12px">
         <div>
-          <div style="font-weight: 650">共 {{ speakers.length }} 位说话人</div>
-          <p class="small muted">
-            声纹用来在<b>不同录音</b>里认出同一个人。登记一次，之后自动匹配并套用名字。
+          <div style="font-weight: 640; font-size: 15px">
+            {{ speakers.length }} 位说话人 · {{ withEmbedding }} 个已有声纹
+          </div>
+          <p class="small muted" style="margin-top: 3px">
+            声纹用来在<b>不同录音</b>里认出同一个人：登记一次，之后自动匹配并套用名字。
           </p>
         </div>
         <span class="spacer" />
@@ -16,40 +18,44 @@
     </div>
 
     <div v-if="!speakers.length" class="card empty">
+      <div class="art"><Icon name="users" :size="26" /></div>
       <h3>声纹库还是空的</h3>
-      <p class="small">
+      <p class="hint">
         两种登记方式：① 在转写详情页点说话人旁边的 <span class="kbd">+</span>；
         ② 这里从录音库挑一段只有这个人说话的音频（5 秒以上即可）。
       </p>
     </div>
 
     <div v-else class="grid grid-3">
-      <div v-for="s in speakers" :key="s.id" class="card card-pad">
-        <div class="row" style="gap: 8px">
-          <span
-            class="speaker-dot"
-            :style="{ background: s.color || 'var(--accent)', width: '12px', height: '12px' }"
-          />
-          <input
-            class="input"
-            style="height: 30px; flex: 1; min-width: 0; font-weight: 600"
-            :value="s.name"
-            @change="rename(s, $event.target.value)"
-          />
-        </div>
-        <div class="row wrap small muted" style="margin-top: 8px; gap: 6px">
-          <span class="badge" :class="s.has_embedding ? 'ok' : 'warn'">
-            {{ s.has_embedding ? '已有声纹' : '仅名字' }}
+      <div v-for="s in speakers" :key="s.id" class="card" style="padding: 16px">
+        <div class="row" style="gap: 11px">
+          <span class="avatar" :style="{ background: s.color || 'var(--accent)', width: '38px', height: '38px', borderRadius: '12px', fontSize: '15px' }">
+            {{ initial(s.name) }}
           </span>
-          <span>{{ s.file_count }} 个录音</span>
+          <div style="min-width: 0; flex: 1">
+            <input
+              class="input"
+              style="height: 32px; font-weight: 600; font-size: 13.5px"
+              :value="s.name"
+              @change="rename(s, $event.target.value)"
+            />
+            <div class="row wrap small muted" style="margin-top: 6px; gap: 6px">
+              <span class="badge" :class="s.has_embedding ? 'ok' : 'warn'">
+                <span class="bullet" />{{ s.has_embedding ? '已有声纹' : '仅名字' }}
+              </span>
+              <span>{{ s.file_count }} 个录音</span>
+            </div>
+          </div>
         </div>
-        <div class="row wrap" style="margin-top: 10px; gap: 4px">
+        <div class="row wrap" style="margin-top: 12px; gap: 4px">
           <button class="btn sm ghost" @click="openEnroll(s)">
             <Icon name="upload" :size="13" /> 更新声纹
           </button>
-          <button class="btn sm ghost" @click="openMerge(s)">合并到…</button>
+          <button class="btn sm ghost" @click="openMerge(s)">
+            <Icon name="link" :size="13" /> 合并到…
+          </button>
           <span class="spacer" />
-          <button class="btn sm ghost danger" :title="`删除 ${s.name}`" @click="remove(s)">
+          <button class="btn sm ghost danger icon" :title="`删除 ${s.name}`" @click="remove(s)">
             <Icon name="trash" :size="13" />
           </button>
         </div>
@@ -221,6 +227,14 @@ import { api } from '../api'
 import { fmtDuration, refreshSpeakers, store, toast } from '../store'
 
 const speakers = computed(() => store.speakers)
+
+const withEmbedding = computed(() => speakers.value.filter((x) => x.has_embedding).length)
+
+function initial(name) {
+  const t = String(name || '').trim()
+  if (!t) return '?'
+  return /[a-zA-Z]/.test(t[0]) ? t[0].toUpperCase() : t[0]
+}
 const creating = ref(false)
 const saving = ref(false)
 const form = ref({ name: '' })
