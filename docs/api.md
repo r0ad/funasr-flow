@@ -34,6 +34,7 @@
 | PATCH | `/api/transcripts/{file_id}/segments/{idx}` | 改一句的文字或簇标签 |
 | PATCH | `/api/transcripts/{file_id}/speakers/{cluster}` | 给某个簇改名 / 绑定声纹 |
 | POST | `/api/transcripts/{file_id}/speakers/{cluster}/enroll` | 用该簇质心登记声纹 |
+| POST | `/api/transcripts/{file_id}/speakers/{cluster}/merge` | 把该簇合并进另一个簇（人工收拾过聚类） |
 | POST | `/api/transcripts/bulk-assign` | 把某簇绑定到已有声纹 |
 | GET | `/api/search` | 全文搜索 |
 | GET | `/api/export` | 导出 TXT / Markdown / SRT / JSON |
@@ -107,8 +108,8 @@
     "auto_map_speakers": true,
     "min_speaker_sim": 0.62,
     "merge_threshold": 0.72,
-    "absorb_threshold": 0.35,
-    "small_cluster_ratio": 0.15,
+    "absorb_threshold": 0.5,
+    "absorb_max_seconds": 5.0,
     "concurrency": 1,
     "keep_wav": false,
     "auto_scan_minutes": 0
@@ -130,7 +131,7 @@
 
 返回 `{"values": {...}}`（完整的最新值）。未知键返回 400 `{"detail": "未知配置项: foo"}`；类型转不过去返回 400 `{"detail": "配置项 x 类型错误"}`。
 
-`merge_threshold` / `absorb_threshold` / `small_cluster_ratio` 分别控制聚类合并、碎片簇吸收与碎片判定（详见 `docs/architecture.md`），设置页暂未暴露这三个键，但可以在这里改。
+`merge_threshold` / `absorb_threshold` / `absorb_max_seconds` 分别控制聚类合并、碎片簇吸收阈值与碎片判定时长（详见 `docs/architecture.md`），设置页「高级」面板里可以直接调。
 
 注意：`engine` 不是设置项，选中引擎只能通过任务 `options`（见 `/api/files/batch`）；`auto_scan_minutes > 0` 时后端每 N 分钟自动扫描一次 `input_dir`，`0` 表示关闭。
 
@@ -384,6 +385,22 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 
 - 该簇没有质心（未开启 `auto_map_speakers`、句子太短、或引擎不支持声纹）时返回 400 `该说话人还没有声纹质心，请先完成转写`。
 - 同名已存在且 `overwrite=false` 时复用原声纹；`overwrite=true` 覆盖其 embedding。
+
+### POST `/api/transcripts/{file_id}/speakers/{cluster}/merge`
+
+自动聚类刻意保守（宁可多留一个簇，也不把只说了几句的人并掉），多出来的簇用这个接口手动合并：
+
+```json
+{"target": "spk0"}
+```
+
+```json
+{"ok": true, "moved": 7}
+```
+
+- 会把 `segments.speaker = cluster` 的句子全部改成 `target`，然后删掉该簇的 `file_speakers` 行。
+- 目标簇还没名字/没绑声纹时，继承源簇的 `display_name` 与 `speaker_id`。
+- `target` 与自己相同：400 `不能把说话人合并到自己`；任一簇不存在：404 `说话人不存在`。
 
 ### POST `/api/transcripts/bulk-assign`
 

@@ -78,6 +78,11 @@ export const api = {
       method: 'POST',
       body: { file_id: fileId, cluster, speaker_id: speakerId },
     }),
+  mergeCluster: (fileId, cluster, target) =>
+    request(`/api/transcripts/${fileId}/speakers/${encodeURIComponent(cluster)}/merge`, {
+      method: 'POST',
+      body: { target },
+    }),
 
   // ---- 搜索 / 导出
   search: (q, limit = 60) => request(`/api/search${qs({ q, limit })}`),

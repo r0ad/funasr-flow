@@ -36,8 +36,8 @@ DEFAULT_SETTINGS = {
     "auto_map_speakers": True,
     "min_speaker_sim": 0.62,  # 声纹匹配阈值
     "merge_threshold": 0.72,  # 同一个人被拆成两簇时的合并阈值
-    "absorb_threshold": 0.35,  # 碎片簇（噪声/短句）吸收阈值
-    "small_cluster_ratio": 0.15,  # 占比低于此值视为碎片簇
+    "absorb_threshold": 0.5,  # 碎片簇（噪声/短句）被吸收的最低相似度
+    "absorb_max_seconds": 5.0,  # 累计时长不超过此值（且 ≤2 句）才算碎片簇
     "concurrency": 1,  # GPU 串行，勿改
     "keep_wav": False,
     "auto_scan_minutes": 0,  # 0 = 关闭定时扫描

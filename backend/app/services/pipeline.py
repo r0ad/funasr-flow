@@ -118,8 +118,9 @@ def merge_similar_clusters(
     centroids: dict[str, np.ndarray],
     utts,
     threshold: float = 0.72,
-    small_ratio: float = 0.15,
-    absorb_thr: float = 0.35,
+    absorb_thr: float = 0.5,
+    absorb_max_seconds: float = 5.0,
+    absorb_max_utts: int = 2,
     target: int | None = None,
 ):
     """把"一个人被拆成多个簇"的情况收拾干净。
@@ -127,8 +128,12 @@ def merge_similar_clusters(
     三步：
     1. 余弦 ≥ threshold 的簇直接合并；
     2. 若指定了目标人数（设置里的"说话人数"），反复合并最相似的一对直到达标；
-    3. 吸收碎片簇：占比 < small_ratio 且与某个大簇相似度 ≥ absorb_thr 的簇并入该大簇
-       （电话录音里 VAD 切出的噪声片段常常自成一簇）。
+    3. 吸收碎片簇：只说了一两句、累计时长 ≤ absorb_max_seconds、且与某个大簇相似度
+       ≥ absorb_thr 的簇并入该大簇（电话录音里 VAD 切出的噪声片段常自成一簇）。
+
+    第 3 步刻意保守：早先按"时长占比"判断碎片，会把真实存在的第二说话人（整通电话
+    只说了几句）并进主说话人，导致整条录音只剩一个人。宁可多留一个簇让用户手动合并，
+    也不能把两个人当成一个。
     """
     keys = list(centroids)
     if len(keys) < 2:
@@ -176,19 +181,24 @@ def merge_similar_clusters(
                 break
             _merge(pair[2], pair[1])
 
-    # 3) 碎片簇吸收
-    total = sum(weights[k] for k in keys) or 1.0
+    # 3) 碎片簇吸收（只吃"一两句的噪声"，不吃说话少的人）
+    utt_counts: dict[str, int] = defaultdict(int)
+    for u in utts:
+        utt_counts[u.cluster] += 1
+
     changed = True
     while changed and len(vec) > 1:
         changed = False
         for small in sorted(vec, key=lambda k: sum(weights[x] for x in groups[k])):
-            w = sum(weights[x] for x in groups[small])
-            if w / total >= small_ratio:
+            members = groups[small]
+            cnt = sum(utt_counts[x] for x in members)
+            secs = sum(weights[x] for x in members)
+            if cnt > absorb_max_utts or secs > absorb_max_seconds:
                 continue
             cands = [
                 (float(np.dot(vec[small], vec[o])), o)
                 for o in vec
-                if o != small and sum(weights[x] for x in groups[o]) > w * 2
+                if o != small and sum(weights[x] for x in groups[o]) > max(secs * 2.0, 1.0)
             ]
             cands = [c for c in cands if c[0] >= absorb_thr]
             if cands:
@@ -325,8 +335,8 @@ def process_job(job_id: int, should_cancel: Callable[[], bool] | None = None) ->
                     centroids,
                     result.utterances,
                     threshold=float(cfg.get("merge_threshold", 0.72)),
-                    small_ratio=float(cfg.get("small_cluster_ratio", 0.15)),
-                    absorb_thr=float(cfg.get("absorb_threshold", 0.35)),
+                    absorb_thr=float(cfg.get("absorb_threshold", 0.5)),
+                    absorb_max_seconds=float(cfg.get("absorb_max_seconds", 5.0)),
                     target=int(cfg.get("spk_num") or 0) or None,
                 )
                 mapping = match_speakers(centroids, float(cfg.get("min_speaker_sim", 0.62)))

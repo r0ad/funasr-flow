@@ -358,3 +358,23 @@ def test_init_db_upgrades_old_schema(tmp_path, monkeypatch) -> None:
     assert {"status", "duration", "updated_at"} <= cols
     rows = dbmod.get_conn().execute("SELECT COUNT(*) n FROM files").fetchone()
     assert rows["n"] == 1  # 老数据没被删
+
+
+def test_merge_keeps_minority_speaker_with_several_sentences() -> None:
+    """只说了几句的第二说话人不能被当成碎片簇吸收掉。"""
+    main = _unit(1.0, 0.0)
+    frag = _unit(0.6, 0.8)  # 1 句 4 秒，与主簇余弦 0.6 -> 碎片，吸收
+    minor = _unit(0.55, -0.835)  # 6 句 12 秒 -> 是真人，保留（与碎片簇不像）
+    utts = [Utterance(0, 30000, "主说话人", "spk0")]
+    utts.append(Utterance(0, 4000, "嗯", "spk1"))
+    for i in range(6):
+        utts.append(Utterance(0, 2000, f"第二个人第{i}句", "spk2"))
+
+    out, alias = pipeline.merge_similar_clusters(
+        {"spk0": main, "spk1": frag, "spk2": minor}, utts, threshold=0.72
+    )
+
+    assert set(out) == {"spk0", "spk2"}
+    assert alias["spk1"] == "spk0"
+    assert alias["spk2"] == "spk2"
+    assert [u.cluster for u in utts if u.text != "嗯"] == ["spk0"] + ["spk2"] * 6

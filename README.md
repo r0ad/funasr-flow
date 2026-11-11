@@ -178,8 +178,8 @@ funasr-flow/
 | `auto_map_speakers` | `true` | 转写后自动与声纹库比对并绑定已有名字 | 设置页 checkbox |
 | `min_speaker_sim` | `0.62` | 绑定已有声纹的最小余弦相似度，调高更保守 | 设置页「声纹匹配阈值」 |
 | `merge_threshold` | `0.72` | 两个说话人簇余弦 ≥ 此值就视为同一个人并合并 | 设置页暂未暴露，用 `PATCH /api/settings` |
-| `absorb_threshold` | `0.35` | 碎片簇被并入大簇的最低相似度 | 同上 |
-| `small_cluster_ratio` | `0.15` | 说话时长占比低于此值视为碎片簇（噪声/短句） | 同上 |
+| `absorb_threshold` | `0.5` | 碎片簇被并入大簇的最低相似度 | 同上 |
+| `absorb_max_seconds` | `5.0` | 累计时长不超过此值（且 ≤2 句）才算碎片簇 | 同上 |
 | `concurrency` | `1` | 并发任务数；当前实现固定单卡串行，此键暂不生效 | 留 `1`（见 `docs/architecture.md`） |
 | `keep_wav` | `false` | 是否保留转码后的 16 kHz 中间 wav（`data/`、`.cache/tmp/`） | 设置页 checkbox |
 | `auto_scan_minutes` | `0` | 定时自动扫描间隔（分钟），`0` 关闭；到点后台扫描一次 `input_dir`，新文件自动入库 | 留 `0` 手动扫描 |
@@ -272,7 +272,8 @@ funasr-flow mcp --server http://127.0.0.1:8000
 先确认 `ffmpeg -version` 能跑，且 `ffmpeg` 在 `PATH` 里（Windows 装完要重开终端）。微信的 `.silk` 语音不在支持列表内，需要先转成 wav/mp3。
 
 **说话人被拆得太碎（过聚类）？**
-先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`small_cluster_ratio` + `absorb_threshold`（默认 0.15 / 0.35）把只有一两句的碎片簇吸收进大簇。`min_speaker_sim`（默认 0.62）只决定"是否套用声纹库里的名字"，不影响聚类。这几个键都能用 `PATCH /api/settings` 改，设置页目前只暴露了 `spk_num` 与 `min_speaker_sim`。
+先设 `spk_num` 为真实人数（例如 2），合并阶段会反复合并最相似的一对直到达标。之后还有两道闸：`merge_threshold`（默认 0.72）把余弦足够高的簇直接合并，`absorb_max_seconds` + `absorb_threshold`（默认 5.0 秒 / 0.5）把只有一两句的噪声簇吸收进大簇；
+多出来的说话人不影响识别，可以在详情页用「合并到…」手动并掉。`min_speaker_sim`（默认 0.62）只决定"是否套用声纹库里的名字"，不影响聚类。这几个键都能用 `PATCH /api/settings` 改，设置页目前只暴露了 `spk_num` 与 `min_speaker_sim`。
 
 **识别准确率不理想？**
 通话录音常见 8 kHz、窄带、有回声，准确率天然低于近场录音。可尝试：把热词换成通话里高频的人名/地名（只对 `paraformer-zh` 生效）；对四川话换方言模型对比；校对时直接改句子，改动会写回数据库并参与导出。
@@ -288,7 +289,7 @@ funasr-flow mcp --server http://127.0.0.1:8000
 
 - [x] 定时自动扫描（`auto_scan_minutes`）
 - [ ] 转写结果的纠正学习（把人工改的说话人写回声纹库）
-- [ ] 设置页暴露 `merge_threshold` / `absorb_threshold` / `small_cluster_ratio`（当前只能走 API）
+- [x] 设置页暴露 `merge_threshold` / `absorb_threshold` / `absorb_max_seconds`
 - [ ] 多 GPU / 多 worker 并行（当前刻意串行）
 - [ ] 微信 `.silk` 与更多容器格式解码
 - [ ] 波形时间轴、批量重命名说话人、导出 Word

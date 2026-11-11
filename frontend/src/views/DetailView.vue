@@ -115,7 +115,23 @@
                 >
                   <Icon name="search" :size="13" />
                 </button>
+                <button class="btn sm ghost" title="试听这个人（跳到第一句）" @click="previewCluster(s)">
+                  <Icon name="play" :size="13" />
+                </button>
               </div>
+              <select
+                v-if="speakers.length > 1"
+                class="select"
+                style="height: 24px; font-size: 11.5px; color: var(--muted)"
+                :value="''"
+                title="把这个人并进另一个人（收拾过聚类）"
+                @change="mergeSpeaker(s, $event.target.value, $event)"
+              >
+                <option value="">合并到…</option>
+                <option v-for="o in speakers.filter((x) => x.cluster !== s.cluster)" :key="o.cluster" :value="o.cluster">
+                  {{ o.name }}
+                </option>
+              </select>
             </div>
             <p v-if="!speakers.length" class="small muted">未检测到说话人</p>
           </div>
@@ -351,6 +367,29 @@ async function bindSpeaker(s, speakerId) {
   } catch (e) {
     toast(e.message, 'err')
   }
+}
+
+async function mergeSpeaker(s, target, ev) {
+  if (!target) return
+  const other = speakers.value.find((x) => x.cluster === target)
+  if (!confirm(`把「${s.name}」的 ${s.utt_count ?? ''} 句话合并进「${other ? other.name : target}」？`)) {
+    if (ev) ev.target.value = ''
+    return
+  }
+  try {
+    const r = await api.mergeCluster(fileId.value, s.cluster, target)
+    await load()
+    toast(`已合并 ${r.moved ?? 0} 句`, 'ok')
+  } catch (e) {
+    toast(e.message, 'err')
+    if (ev) ev.target.value = ''
+  }
+}
+
+function previewCluster(s) {
+  const seg = segments.value.find((x) => String(x.speaker) === String(s.cluster))
+  if (!seg) return
+  seek(seg.start_ms)
 }
 
 async function enroll(s) {

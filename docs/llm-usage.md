@@ -109,7 +109,9 @@ curl -s -X PATCH $BASE/api/transcripts/23/segments/7 \
      -H 'Content-Type: application/json' -d '{"speaker":"spk0"}'
 ```
 
-批量场景：`POST /api/transcripts/bulk-assign` body `{"file_ids":[...],"cluster":"spk1","speaker_id":2}`。
+批量场景：`POST /api/transcripts/bulk-assign` body `{"file_id":23,"cluster":"spk1","speaker_id":2}`。
+
+簇分多了（同一个人被拆成 spk1/spk2）：`POST /api/transcripts/23/speakers/spk2/merge` body `{"target":"spk0"}`，返回 `{"ok":true,"moved":7}` 表示 7 句改归目标人。
 
 ## 6. 全文搜索
 

@@ -155,13 +155,13 @@
               <input v-model.number="form.absorb_threshold" type="number" step="0.05" min="0" max="0.9" class="input" />
             </div>
             <div class="field">
-              <label>碎片占比上限</label>
-              <input v-model.number="form.small_cluster_ratio" type="number" step="0.05" min="0" max="0.5" class="input" />
+              <label>碎片吸收时长（秒）</label>
+              <input v-model.number="form.absorb_max_seconds" type="number" step="0.5" min="0" max="60" class="input" />
             </div>
           </div>
           <p class="small muted" style="margin: 8px 0 0">
-            同一人被拆成多簇时调高「合并阈值」会少合并；通话里 2 人却识别出 3 人（第 3 人只有一两句），
-            说明碎片吸收不够，可适当调高「碎片吸收阈值」。
+            「合并阈值」越高越不容易把两个人并成一个；只有 ≤2 句且总时长不超过「碎片吸收时长」的簇，
+            才会在够像时被吸收（专治「嗯」「啊」这类噪声簇）。多出来的说话人可以在详情页「合并到…」手动收拾。
           </p>
         </details>
 

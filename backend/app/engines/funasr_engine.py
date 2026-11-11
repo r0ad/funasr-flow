@@ -121,6 +121,9 @@ class FunAsrEngine:
     # ------------------------------------------------------------------ 转写
     def transcribe(self, wav_path: str, cfg: dict, progress: ProgressCb | None = None) -> AsrResult:
         self.load(cfg)
+        # funasr 内部会把 input 原样塞进 torch 张量，Path 对象会报
+        # "expected Tensor as element 1 in argument 0, but got WindowsPath"
+        wav_path = str(wav_path)
         if progress:
             progress("asr", 0.0, "模型推理中")
 

@@ -156,6 +156,44 @@ class EnrollFromCluster(BaseModel):
     overwrite: bool = False
 
 
+class MergeCluster(BaseModel):
+    target: str
+
+
+@router.post("/transcripts/{file_id}/speakers/{cluster}/merge")
+def merge_cluster(file_id: int, cluster: str, body: MergeCluster) -> dict:
+    """把某个说话人簇合并进另一个簇（人工收拾过聚类/碎片簇）。"""
+    if body.target == cluster:
+        raise HTTPException(400, "不能把说话人合并到自己")
+    with tx() as c:
+        rows = c.execute(
+            "SELECT cluster, speaker_id, display_name FROM file_speakers WHERE file_id=? AND cluster IN (?, ?)",
+            (file_id, cluster, body.target),
+        ).fetchall()
+        src = next((r for r in rows if r["cluster"] == cluster), None)
+        dst = next((r for r in rows if r["cluster"] == body.target), None)
+        if src is None or dst is None:
+            raise HTTPException(404, "说话人不存在")
+        moved = c.execute(
+            "UPDATE segments SET speaker=?"
+            " WHERE speaker=? AND transcript_id=(SELECT id FROM transcripts WHERE file_id=?)",
+            (body.target, cluster, file_id),
+        ).rowcount
+        # 目标簇还没名字时，继承源簇的名字/绑定
+        if dst["speaker_id"] is None and src["speaker_id"] is not None:
+            c.execute(
+                "UPDATE file_speakers SET speaker_id=?, display_name=? WHERE file_id=? AND cluster=?",
+                (src["speaker_id"], src["display_name"], file_id, body.target),
+            )
+        elif not (dst["display_name"] or "").strip() and (src["display_name"] or "").strip():
+            c.execute(
+                "UPDATE file_speakers SET display_name=? WHERE file_id=? AND cluster=?",
+                (src["display_name"], file_id, body.target),
+            )
+        c.execute("DELETE FROM file_speakers WHERE file_id=? AND cluster=?", (file_id, cluster))
+    return {"ok": True, "moved": moved}
+
+
 @router.post("/transcripts/{file_id}/speakers/{cluster}/enroll")
 def enroll_from_cluster(file_id: int, cluster: str, body: EnrollFromCluster) -> dict:
     conn = get_conn()
