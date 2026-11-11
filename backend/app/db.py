@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 _local = threading.local()
 _journal = {"mode": None}  # 探测一次就记住：WAL 还是 DELETE
+_init_lock = threading.Lock()
+_initialized = {"path": None}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (
@@ -166,9 +168,9 @@ def get_conn() -> sqlite3.Connection:
         ensure_dirs()
         conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=30000")
         _set_journal_mode(conn)
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
         _local.conn = conn
     return conn
@@ -185,16 +187,32 @@ def tx() -> Iterator[sqlite3.Connection]:
         raise
 
 
+def is_initialized() -> bool:
+    """当前库是否已在本进程建过表（worker 线程据此跳过重复初始化）。"""
+    return _initialized["path"] == str(DB_PATH)
+
+
 def init_db() -> None:
+    """建表并补齐默认设置。幂等，且进程内只真正执行一次。
+
+    服务启动时 Web 线程与 worker 线程可能同时走到这里，重复执行 schema
+    会互相抢写锁（``database is locked``），因此加锁 + 只跑一次。
+    """
     ensure_dirs()
-    conn = get_conn()
-    conn.executescript(SCHEMA)
-    conn.commit()
-    for k, v in DEFAULT_SETTINGS.items():
-        conn.execute(
-            "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
-            (k, json.dumps(v, ensure_ascii=False)),
-        )
+    key = str(DB_PATH)
+    with _init_lock:
+        if _initialized["path"] == key:
+            return
+        conn = get_conn()
+        conn.executescript(SCHEMA)
+        conn.commit()
+        for k, v in DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
+                (k, json.dumps(v, ensure_ascii=False)),
+            )
+        conn.commit()
+        _initialized["path"] = key
 
 
 def get_setting(key: str, default: Any = None) -> Any:

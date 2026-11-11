@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 
-from .db import init_db, set_metric
+from .db import init_db, is_initialized, set_metric
 from .services import queue as q
 from .services.pipeline import Canceled, process_job
 
@@ -35,7 +35,11 @@ def stop() -> None:
 
 def run_forever(poll_interval: float = 1.0) -> None:
     global _stop
-    init_db()
+    if not is_initialized():
+        try:
+            init_db()
+        except Exception as exc:  # 建表失败不该让 worker 直接死掉
+            log.warning("worker 初始化数据库失败（沿用服务已建好的库）：%s", exc)
     n = q.reset_stuck_jobs()
     if n:
         log.info("恢复 %d 个中断任务", n)

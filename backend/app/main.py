@@ -28,9 +28,14 @@ def _start_worker() -> None:
         return
     if _worker_thread and _worker_thread.is_alive():
         return
-    _worker_thread = threading.Thread(
-        target=worker_mod.run_forever, name="flow-worker", daemon=True
-    )
+
+    def _target() -> None:
+        try:
+            worker_mod.run_forever()
+        except Exception:  # 线程里抛异常会被静默吞掉，这里显式记日志
+            log.exception("内置 worker 线程异常退出（Web 界面仍可用，任务不会自动跑）")
+
+    _worker_thread = threading.Thread(target=_target, name="flow-worker", daemon=True)
     _worker_thread.start()
     system.set_worker_thread(_worker_thread)
     log.info("内置 worker 已启动（线程）")
