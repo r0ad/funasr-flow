@@ -8,8 +8,8 @@
 ## 快速事实
 
 - 后端 HTTP API：`http://127.0.0.1:8000`（可用 `--port` 改），OpenAPI 在 `/openapi.json`，交互文档在 `/docs`。
-- 启动方式：`python run.py`（或 `funasr-flow serve`）。启动后自动建库、扫描 `CallRecord/`、起内置 worker。
-- 数据目录：`data/`（SQLite `flow.db`、导出文本 `transcripts/`、临时 wav）；模型缓存：`.cache/`。
+- 启动方式：`python run.py`（或 `funasr-flow serve`）。启动后自动建库、起内置 worker；音频通过导入进入资料库。
+- 数据目录：`data/`（SQLite `flow.db`、资料库音频 `library/`、导出文本 `transcripts/`）；模型缓存：`.cache/`。
 - 队列串行执行（GPU 单卡），一条录音约 0.05–0.3 倍实时。
 
 ## 给 agent 的三种接入方式

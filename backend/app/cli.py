@@ -2,7 +2,7 @@
 
 子命令：
     funasr-flow serve     启动 Web 服务（默认）
-    funasr-flow scan      扫描录音目录
+    funasr-flow scan      把录音目录导入资料库（复制进 data/library）
     funasr-flow worker    只跑后台转写进程（headless / 服务器部署）
     funasr-flow doctor    检查环境依赖
     funasr-flow api       以 HTTP 客户端方式调用已运行的服务（agent 友好）
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-worker", action="store_true", help="只起 Web，不起转写线程")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("scan", help="扫描录音目录")
+    p = sub.add_parser("scan", help="把录音目录导入资料库（复制进 data/library）")
     p.add_argument("--dir", default=None)
     p.set_defaults(func=cmd_scan)
 

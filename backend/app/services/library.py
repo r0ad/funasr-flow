@@ -38,6 +38,7 @@ _state: dict = {
     "done": 0,
     "added": 0,
     "skipped": 0,
+    "replaced": 0,
     "failed": 0,
     "current": "",
     "started_at": None,
@@ -174,6 +175,7 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
         done=0,
         added=0,
         skipped=0,
+        replaced=0,
         failed=0,
         current="",
         started_at=time.time(),
@@ -181,7 +183,8 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
         error=None,
     )
 
-    added = skipped = failed = 0
+    added = skipped = replaced = 0
+    failed = 0
     try:
         for i, f in enumerate(files, 1):
             if should_cancel is not None and should_cancel():
@@ -196,8 +199,11 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
                 if res["status"] == "skipped":
                     skipped += 1
                 else:
+                    # 覆盖也计入 added（用户视角"导进来了"），但单独给 replaced 供界面显示
                     added += 1
-            _update(done=i, added=added, skipped=skipped, failed=failed)
+                    if res["status"] == "replaced":
+                        replaced += 1
+            _update(done=i, added=added, skipped=skipped, replaced=replaced, failed=failed)
     except InterruptedError as exc:
         _update(error=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -218,6 +224,7 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
         "total": len(files),
         "added": added,
         "skipped": skipped,
+        "replaced": replaced,
         "failed": failed,
     }
 

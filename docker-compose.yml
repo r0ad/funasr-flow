@@ -53,7 +53,10 @@ services:
     #
     # 前提：
     #   1) 宿主机已装 NVIDIA 驱动 + nvidia-container-toolkit（docker run --gpus all 可用）
-    #   2) Dockerfile 按头部注释改用 nvidia/cuda 基础镜像 + cu121 版 torch
+    #   2) 用 cu121 版 torch 构建镜像：
+    #        docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+    #          -t sunzroad/funasr-flow:0.1.0-gpu .
+    #      并在下面的 deploy.resources 打开 reservations（等价 docker run --gpus all）
     # 打开后无需改代码：config.DEFAULT_SETTINGS.device 默认就是 cuda:0，
     # engine 会自动检测 torch.cuda.is_available()。若仍跑 CPU，请在设置页把 device 改为 cpu。
     # ------------------------------------------------------------------

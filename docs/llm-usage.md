@@ -12,25 +12,43 @@ curl -s $BASE/api/health | python -c "import sys,json; d=json.load(sys.stdin); p
 ```
 
 - `health.worker.thread == true` 说明队列会自己跑；`false` 时任务只会停在 queued（此时需要另起 `funasr-flow worker`）。
-- `health.ml.models.asr` 是可选识别模型清单；`health.gpu.available == false` 时推理会落到 CPU（很慢）。
+- `health.ml.models.asr` 是可选识别模型清单；`health.gpu.available == false` 时推理会落到 CPU（很慢），`health.gpu.hint` 会说明原因：镜像是 CPU 版、没加 `--gpus all`，或宿主机缺 NVIDIA 驱动 / PyTorch 不是 CUDA 版。
 
-## 1. 扫描录音目录
+## 1. 导入录音目录
+
+外部目录只当**来源**：音频会被复制进资料库 `data/library/`（容器里是 `/data/library`），数据库只记资料库里的绝对路径。导入完成后源目录被删、换盘符、容器换挂载点，都不影响已有录音和转写。
 
 ```bash
-curl -s -X POST $BASE/api/files/scan -H 'Content-Type: application/json' -d '{"dir":"CallRecord"}'
-# {"added":980,"updated":0,"missing":0,"total":980}
+# 把整个目录（含子目录）导进资料库；接口立刻返回，导入在后台线程跑
+curl -s -X POST $BASE/api/files/scan -H 'Content-Type: application/json' -d '{"dir":"D:/通话录音"}'
+# {"ok":true,"importing":true,"root":"D:/通话录音","import":{"running":true,"total":0,...}}
 ```
 
-不传 `dir` 就扫当前设置里的 `input_dir`。新增/改动的文件会入库为 `idle`，并顺带补齐时长。
+轮询进度（`import` 是当前或最近一次导入任务的快照）：
 
-**不知道有哪些目录可选**：`GET /api/browse?path=` 会返回盘符/根、父目录和每个子目录里的音频数量
-（`entries[].audio`），可以用它逐层往下找录音目录——界面上的「选录音目录」就是调这个接口。
+```bash
+curl -s $BASE/api/state | python -c "import sys,json;i=json.load(sys.stdin)['import'];print(i['running'],i['done'],'/',i['total'],'added',i['added'],'skipped',i['skipped'],'failed',i['failed'],i['error'])"
+```
+
+- `running` 转 `false` 即结束；`failed > 0` 表示个别文件没导进来（坏文件不中断整批，`error` 只在整个任务失败/取消时非空）。
+- 同时只允许一个导入任务，重复调用返回 **409**；目录不存在返回 **400**（`{"detail":"目录不存在：..."}`）。取消：`POST $BASE/api/files/import/cancel`。
+- **不传 `dir`** 表示「重扫资料库」：只对齐磁盘变化（`added`/`updated`/`missing`），不导入外部目录，也不改 `input_dir`。
+
+不知道有哪些目录可选：`GET /api/browse?path=` 返回盘符/根、父目录和每个子目录里的音频数量（`entries[].audio`），可以逐层往下找——界面上的「导入录音」就是调这个接口。
 
 ```bash
 curl -s "$BASE/api/browse?path=D:/" | python -c "import json,sys;d=json.load(sys.stdin);print(d['path']);[print(' ',e['name'],e['audio']) for e in d['entries'][:10]]"
 ```
 
-**文件不在本机目录里（或只有几个）**：直接上传，比让 agent 去猜路径省事。
+导入完成后看清单。`GET /api/files/library` 给出资料库文件数与占用，`GET /api/files` 照常分页列文件：
+
+```bash
+curl -s $BASE/api/files/library
+# {"ok":true,"dir":".../data/library","files":980,"bytes":3741119210,"import":{...}}
+curl -s "$BASE/api/files?limit=5"
+```
+
+**文件不在本机目录里（或只有几个）**：直接上传，落进同一个资料库。
 
 ```bash
 # 文件名放查询参数，body 是文件原始字节；上传后是 idle，需要再入队
@@ -42,7 +60,7 @@ curl -s -X POST "$BASE/api/files/upload?name=10月13日%20妈.m4a" \
 curl -s -X POST $BASE/api/files/batch -H 'Content-Type: application/json' -d '{"ids":[981],"action":"enqueue"}'
 ```
 
-上传的副本放在 `data/uploads/`（删记录时会连文件一起删），扫描进来的原始录音不会被删。
+上传的副本也在 `data/library/`（`DELETE /api/files/{id}?purge=true` 会连副本一起删），外部来源目录里的原文件永远不会被删。
 
 ## 2. 看清单、挑要处理的文件
 
@@ -64,7 +82,7 @@ curl -s -X POST $BASE/api/files/batch -H 'Content-Type: application/json' \
 # {"ok":true,"queued":3,"skipped":0,"job_ids":[6,7,8]}
 ```
 
-- `action`：`enqueue`（转写）、`reset`（清掉旧结果重跑）、`delete`（从库中移除，不删源文件）。
+- `action`：`enqueue`（转写）、`reset`（清掉旧结果重跑）、`delete`（只删数据库记录与转写，不删资料库里的音频文件；要连副本一起删用 `DELETE /api/files/{id}?purge=true`）。
 - 已排队/运行中的文件会被跳过（`skipped`），可以安全重发。
 - 查看进度：
 
@@ -200,7 +218,7 @@ funasr-flow api health
 
 | 用户说 | 你要做 |
 | --- | --- |
-| "把这些录音都转成文字" | `POST /api/files/scan` → `GET /api/files?status=idle` 收集 id → `POST /api/files/batch` enqueue → 轮询 `/api/state` 直到 `queued+running == 0` |
+| "把这些录音都转成文字" | 外部目录先 `POST /api/files/scan {"dir": ...}` 导入并等 `/api/state` 的 `import.running` 转 false → `GET /api/files?status=idle` 收集 id → `POST /api/files/batch` enqueue → 轮询 `/api/state` 直到 `queued+running == 0` |
 | "妈那段聊了啥" | `GET /api/files?q=妈` → 取 `status=done` 的最新一条 → `GET /api/transcripts/{id}` → 按说话人分段复述 |
 | "有没有提到寄东西/医院" | `GET /api/search?q=寄` / `?q=医院` → 命中文件+时间点 → 取该文件转写，摘上下文 |
 | "整理成会议纪要" | 取 `segments`，按 `speaker` 合并连续发言，抽要点；需要引用就带 `[mm:ss]` |

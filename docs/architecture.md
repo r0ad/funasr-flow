@@ -13,6 +13,8 @@ funasr-flow serve（一个 Python 进程）
 │   └── GET /api/files/{id}/audio（流式响应，支持 Range）
 ├── daemon 线程 "flow-worker"
 │   └── worker.run_forever()：claim_next → process_job → 写库
+├── daemon 线程 "import"（只在导入时存在）
+│   └── library.import_dir()：逐个复制进 data/library → 写 files
 └── （可选）另一个进程：funasr-flow worker
         └── 同一个 worker.run_forever()，与 Web 共用 data/flow.db
 ```
@@ -33,8 +35,8 @@ funasr-flow serve（一个 Python 进程）
 ## 2. 一次任务的生命周期
 
 ```text
-扫描         POST /api/files/scan
-              └─ files 表插入/更新，status = idle
+导入         POST /api/files/scan {"dir": "..."}
+              └─ 后台线程把音频复制进 data/library，files 插入/更新，status = idle
 入队         POST /api/files/batch {action:"enqueue"}
               └─ jobs 插入（status=queued），files.status = queued
 领取         worker.claim_next()  （BEGIN IMMEDIATE）
@@ -55,6 +57,8 @@ funasr-flow serve（一个 Python 进程）
 
 - **进度不是引擎回调驱动的**：`pipeline` 起一个 ticker 线程，用 `rtf_est` 估算 `asr` 阶段进度并每 0.8 s 写一次 `jobs.progress`。任务结束后用真实耗时更新 `rtf_est = 0.7 × 实测 + 0.3 × 旧值`。
 - `transcripts.duration` 与 `files.duration` 都是**秒**（float）；`segments.start_ms/end_ms` 是**毫秒**（int）。
+- **短音频直接判失败**：转码后时长 < 1.0 s（或 wav 实际不足 1 秒）抛 `音频为空或过短（不足 1 秒），已跳过`，不再加载模型。
+- **落库前清脏字符**：`pipeline.clean_text()` 去掉孤立代理对与控制符，`pipeline.meaningful_chars()` 数有效字符；一个有效字符都没有的句子丢弃，全丢时按 `没有检测到语音：这条录音可能是静音、纯音乐或过短` 判失败。
 - 保存是"先删后插"：同一文件重新转写会清掉旧的 `transcripts`（级联删 `segments`）与 `file_speakers`，再写入新结果。校对时改的文本会被覆盖，这是"重新转写"的预期行为。
 - 转写结果为空（整段静音）也会写一条 `transcripts`，只是 `segments` 为空，`files.status` 仍是 `done`。
 
@@ -64,12 +68,12 @@ funasr-flow serve（一个 Python 进程）
 
 | 状态 | 进入时机 | 离开 |
 | --- | --- | --- |
-| `idle` | 扫描发现；取消排队；取消运行中的任务 | 入队 → `queued` |
+| `idle` | 导入或重扫资料库发现；取消排队；取消运行中的任务 | 入队 → `queued` |
 | `queued` | `enqueue()` 成功 | 被领取 → `running`；被取消 → `idle` |
 | `running` | `claim_next()` | 完成 → `done`；异常 → `failed`；取消 → `idle` |
 | `done` | `_save_result()` | 重新转写（reset）→ `queued` |
 | `failed` | worker 捕获异常 | 重新入队 → `queued` |
-| `missing` | 扫描时源文件已不存在 | 文件恢复后再次扫描 → `idle` |
+| `missing` | 重扫资料库时副本已不存在 | 文件恢复后再次重扫 → `idle` |
 
 `jobs.status`：`queued → running → done | failed | canceled`，另有布尔列 `cancel_requested`。
 
@@ -98,7 +102,7 @@ files (1) ───< (N) jobs
 
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
-| `files` | `rel_path UNIQUE`、`name`、`ext`、`size`、`mtime`、`duration`（秒）、`status`、`error` | 录音清单，`rel_path` 为**绝对路径**（扫描/上传统一），换目录扫描不会互相误判 missing |
+| `files` | `rel_path UNIQUE`、`source_path`、`name`、`ext`、`size`、`mtime`、`duration`（秒）、`status`、`error` | 录音清单。`rel_path` 是**资料库里的绝对路径**（上传与导入统一写）；`source_path` 记导入来源的绝对路径，用于查重，上传的文件为 `NULL` |
 | `jobs` | `file_id`、`status`、`stage`、`progress`、`attempts`、`cancel_requested`、`options`(JSON)、时间戳 | 任务与参数快照；`options` 覆盖全局设置 |
 | `transcripts` | `file_id UNIQUE`、`duration`、`model`、`language`、`asr_ms` | 一次转写一行，重转即覆盖 |
 | `segments` | `transcript_id`、`idx`、`start_ms`、`end_ms`、`speaker`、`text` | `speaker` 存的是 cluster 标签（`spk0`…），不是人名 |
@@ -167,7 +171,7 @@ engine.load(cfg) → engine.transcribe(wav, cfg)
 
 ```text
 每 0.7 s：
-  snapshot = {"queue": {...}, "files": {...}, "active": {...}|null, "worker_age": 12.3, "ts": 1762...}
+  snapshot = {"queue": {...}, "files": {...}, "import": {...}, "active": {...}|null, "worker_age": 12.3, "ts": 1762...}
   与上次序列化结果比较，不同才发：
     data: {"queue":{"queued":12,"running":1,...},"files":{"idle":967,"done":13,...},...}\n\n
   相同则计数，每 15 次（约 10.5 s）发一行注释保活：
@@ -184,18 +188,36 @@ engine.load(cfg) → engine.transcribe(wav, cfg)
 | 路径 | 内容 | 是否入库 |
 | --- | --- | --- |
 | `data/flow.db` | 全部结构化数据（WAL 模式，另有 `-wal`/`-shm`） | — |
+| `data/library/` | **资料库**：上传与导入的音频副本；容器里是 `/data/library`；代码里 `UPLOAD_DIR` 只是它的别名，旧 `data/uploads` 已废弃 | 是，`rel_path` 指向这里 |
 | `data/transcripts/<file_id>.json` | 每个文件一份导出快照（含 `engine` 与 speakers 映射） | 否，冗余备份 |
 | `.cache/tmp/job_<id>.wav` | 转码中间文件，默认任务结束即删（`keep_wav=true` 保留） | 否 |
 | `.cache/modelscope/` | ModelScope 模型缓存（`MODELSCOPE_CACHE`） | 否 |
 | `.cache/huggingface/`、`.cache/funasr/` | 其余缓存（`HF_HOME`、`FUNASR_CACHE`） | 否 |
-| `CallRecord/` | 源录音，只读使用，扫描时写入 `files` | — |
+| `CallRecord/` | 默认的导入来源目录，只读；导入时把音频复制进资料库 | — |
 
 `data/`、`.cache/`、`CallRecord/` 都在 `.gitignore` 里。`FLOW_DATA_DIR` / `FLOW_CACHE_DIR` 可以把前两者搬到别的磁盘。
+
+### 为什么是「导入」而不是「扫描外部目录」
+
+旧实现是「扫描外部目录 + 把 `rel_path` 记成相对 `input_dir` 的路径」。这套模型有个致命问题：`input_dir` 一换（换挂载点、容器重建、用户改了录音目录），数据库里所有相对路径同时失效，978 个文件会被一次性判成 `missing`——转写结果其实还在，列表却全是「文件丢了」。
+
+现在把来源和资产分开：
+
+- 外部目录**只是导入来源**。`library.import_one()` 把音频复制进 `data/library/`（`ingest_mode=link` 时同盘建硬链接），数据库只记资料库里的绝对路径。源目录被删、盘符变了、容器换挂载点，都不影响已有录音和转写。
+- `source_path`（绝对路径）+ `size` 用来查重：同一来源、大小没变 → `skipped`；同来源但大小变了 → 覆盖资料库里的副本、更新记录，并删掉旧 `transcripts`（内容已不是同一段音频）。
+- 重名不覆盖：`library.unique_target()` 改成 `名字 (2).m4a`。
+- `missing` 只在「重扫资料库」时判定，且只对落在本次扫描目录下的记录，别的目录的文件不会互相误伤；文件回来自动恢复 `idle`。
+
+导入跑在后台线程里，进度存在 `library._state`，通过 `GET /api/state` 的 `import` 与 `GET /api/files/library` 暴露：`running`、`mode`、`dir`、`total`、`done`、`added`、`skipped`、`failed`、`current`、`started_at`、`finished_at`、`error`。同一时刻只允许一个导入任务（`start_import()` 见 `running` 直接拒绝，API 返回 409）；取消是协作式的，线程处理下一个文件前检查标志。
+
+导入线程结束时会自动触发一次 `scanner.start_duration_probe(LIBRARY_DIR)`：新入库的文件还没有时长，探测完列表里立刻能看到 `0:xx`（补时长失败只记 warning，不影响导入结果）。
+
+注意：`import_dir()` 的返回值与 `_state` 只有 `added/skipped/failed/total`，**没有独立的 `replaced` 键**——被覆盖的文件计在 `added` 里。
 
 ## 8. 已知限制
 
 - 单 worker 串行；多卡并行尚未实现。
-- `auto_scan_minutes > 0` 时 `services/scanner.start_auto_scan()` 起一个 `auto-scan` 线程，每 15 秒检查一次是否到点；到点扫描 `input_dir` 并对新增文件补时长。默认 `0`（关闭）。
+- `auto_scan_minutes > 0` 时 `services/scanner.start_auto_scan()` 起一个 `auto-scan` 线程，每 15 秒检查一次是否到点；到点调 `library.import_dir(input_dir)` 自动导入一次（已有导入在跑就跳过），并给新增文件补时长。默认 `0`（关闭）。
 - 取消只能停在阶段边界，不能中断正在执行的 FunASR 推理。
 - 声纹登记的临时文件用 `config.temp_path()`（创建后立刻 `os.close`）配合 `safe_unlink()`，Windows 上文件被占用时只跳过删除，不再抛 500。
 - SSE 每个连接每 0.7 s 查一次库；同时开很多标签页会增加 SQLite 读压力（WAL 下读不阻塞写，但仍建议一两个页面）。

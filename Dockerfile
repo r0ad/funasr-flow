@@ -49,6 +49,10 @@ RUN set -eux; \
 # ================================================================ stage 2: 运行时
 FROM ${PYTHON_IMAGE} AS runtime
 
+# 全局 ARG 只在 FROM 行可见，RUN 里要用必须在本 stage 重新声明一次
+# （否则 ${TORCH_INDEX_URL} 展开成空，pip 会把 "torch" 当成 index-url 直接报错）
+ARG TORCH_INDEX_URL
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \

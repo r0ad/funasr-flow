@@ -74,9 +74,7 @@ funasr-flow doctor
 
 ### 跑起来
 
-1. 把录音放进项目下的 `CallRecord/`（没有就新建；支持 `.m4a .mp3 .wav .amr .aac .opus .ogg .flac .mp4 .wma .3gp .m4b .webm`）。
-   也可以启动后在「设置 → 录音目录」里改成任意目录。
-2. 启动服务：
+1. 启动服务：
 
    ```bash
    funasr-flow serve
@@ -85,19 +83,25 @@ funasr-flow doctor
    ```
 
    首次启动会从 ModelScope 下载模型到项目的 `.cache/`（约 2 GB），之后完全离线。
-3. 浏览器打开 <http://127.0.0.1:8000>。
-4. 点右上角「选录音目录」→ 在弹窗里挑盘符/子目录（有录音的目录会标出「N 个录音」）→「用这个目录」；
-   也可以直接点「上传录音」或把音频文件拖进页面，文件会复制到 `data/uploads/` 并自动入库。
-5. 转写完成后点某一行「查看转写」：左边播放、右边逐句文字，点文字即可修改。
+2. 浏览器打开 <http://127.0.0.1:8000>。
+3. 点右上角「导入录音」→ 在弹窗里挑盘符/子目录（有录音的目录会标出「N 个录音」）→「用这个目录」。
+   导入会把音频**复制**进资料库 `data/library/`，数据库只记资料库里的绝对路径；原始目录只是来源，
+   导入完就可以挪走甚至删掉。也可以点「上传录音」或把音频文件拖进页面，同样落在资料库。
+4. 转写完成后点某一行「查看转写」：左边播放、右边逐句文字，点文字即可修改。
 
-不想用网页也可以只扫描：
+录音放在哪里都行：项目下的 `CallRecord/` 只是默认的**导入来源**（`input_dir` 的默认值），
+不再被原地「扫描」；任何有权限的目录都能在「导入录音」弹窗里选到。支持的扩展名：
+`.m4a .mp3 .wav .amr .aac .opus .ogg .flac .mp4 .wma .3gp .m4b .webm`。
 
-
+不想用网页也可以直接导入（命令名保留 `scan`，动作是「复制进资料库 + 入库」）：
 
 ```bash
-funasr-flow scan                 # 扫描默认目录
-funasr-flow scan --dir D:\Calls   # 扫描指定目录
+funasr-flow scan                 # 导入默认来源目录（input_dir）
+funasr-flow scan --dir D:\Calls  # 导入指定目录
 ```
+
+导入在后台线程里跑，进度看 `/api/state` 的 `import` 字段（网页设置页也会显示进度条）；
+同一时间只允许一个导入任务。
 
 后台常驻参数：
 
@@ -126,7 +130,7 @@ npm run dev          # http://localhost:5173，/api 代理到 http://127.0.0.1:8
 - 后端不在 8000 端口时：`FLOW_API=http://127.0.0.1:8010 npm run dev`。
 - 构建生产产物：`npm run build`，输出到 `frontend/dist`，`funasr-flow serve` 会自动托管它。
 
-### Docker（可选，CPU 镜像）
+### Docker（可选）
 
 ```bash
 mkdir -p data cache CallRecord
@@ -155,24 +159,49 @@ docker compose up -d --build
 >   -v funasr-data:/data -v funasr-cache:/cache \
 >   -v "D:/:/host/d:ro" \
 >   sunzroad/funasr-flow:latest
-> # 网页 → 选录音目录 → 左侧点 /host/d → 点进你的通话录音文件夹 → 用这个目录
+> # 网页 → 导入录音 → 左侧点 /host/d → 点进你的通话录音文件夹 → 用这个目录
 >
 > # 方式 B：只挂一个目录
 > docker run -d --name funasr-flow -p 8000:8000 \
 >   -v funasr-data:/data -v funasr-cache:/cache \
 >   -v "D:/我的通话录音:/media:ro" \
 >   sunzroad/funasr-flow:latest
-> # 网页 → 选录音目录 → 点 /media → 用这个目录
+> # 网页 → 导入录音 → 点 /media → 用这个目录
 > ```
 >
-> 这些参数不用记：容器里点右上角「选录音目录」，弹窗顶部会列出现有挂载，选个盘符就能
+> 这些参数不用记：容器里点右上角「导入录音」，弹窗顶部会列出现有挂载，选个盘符就能
 > 复制到现成的 `docker run` 命令（数据卷沿用同一个，转写结果不会丢）。盘符写 `D:/...`
 > 或 `/d/...` 都行，记得加引号。
 >
-> 上传的文件会落在命名卷 `flow-data` 里（`/data/uploads`），不占用宿主机的绑定目录；
-> 删除记录时这些上传副本会被一起删掉，扫描进来的原始录音永远不动。
+> 导入和上传的音频都会落在命名卷里的资料库 `/data/library`（容器里 `/data` 就是资料库），
+> 不占用宿主机的绑定目录；原始录音只当导入来源，删记录时只删资料库里的副本，绑进来的原始目录永远不动。
 
-镜像基于 CPU 版 PyTorch，适合跑通流程或小批量；GPU 需要把 `Dockerfile` 换成 CUDA 基镜像并打开 `docker-compose.yml` 里注释掉的 `deploy.resources` 段（见文件头部注释）。
+默认镜像基于 CPU 版 PyTorch，能跑通流程，只是转写慢。要用 GPU，构建和启动各多一步。
+
+**1. 宿主机准备**：装好 NVIDIA 驱动和 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)，
+先确认容器能看见显卡（没输出就先去修驱动/工具链）：
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
+```
+
+**2. 构建 CUDA 版镜像**（构建参数把 PyTorch 换成 cu121 的 wheel）：
+
+```bash
+docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+  -t funasr-flow:cu121 .
+```
+
+**3. 启动时把 GPU 交给容器**：
+
+```bash
+docker run -d --name funasr-flow --gpus all -p 8000:8000 \
+  -v flow-data:/data \
+  funasr-flow:cu121
+```
+
+起来后看 `GET /api/health`：`gpu.available` 应为 `true`。还是 `false` 时读 `gpu.hint`——
+它会直接说明是「镜像不是 CUDA 版」还是「启动漏了 `--gpus all`」。
 
 ## 目录结构
 
@@ -186,13 +215,13 @@ funasr-flow/
 │   ├── worker.py            # worker 主循环（线程内或独立进程）
 │   ├── api/                 # files / transcripts / speakers / system 四组路由
 │   ├── engines/             # base.py 引擎协议、registry.py 注册表、funasr_engine.py
-│   └── services/            # scanner / queue / pipeline / speakers（聚类与声纹）
+│   └── services/            # library（导入与资料库）/ scanner / queue / pipeline / speakers
 ├── frontend/                # Vue 3 + Vite 源码，dist/ 为构建产物
 ├── tests/                   # pytest 纯逻辑测试（不下载模型）
 ├── scripts/                 # 手工探针脚本（probe_pipeline.py 等）
 ├── docs/                    # architecture.md / api.md / models.md
-├── CallRecord/              # 默认录音目录（git 忽略）
-├── data/                    # flow.db 与导出 JSON（git 忽略）
+├── CallRecord/              # 默认导入来源目录（git 忽略）
+├── data/                    # flow.db、资料库 library/、导出 JSON（git 忽略）
 ├── .cache/                  # 模型缓存与中间 wav（git 忽略）
 ├── run.py                   # 等价 funasr-flow serve
 ├── pyproject.toml
@@ -206,7 +235,8 @@ funasr-flow/
 
 | 键 | 默认值 | 含义 | 怎么改 |
 | --- | --- | --- | --- |
-| `input_dir` | `<项目根>/CallRecord` | 扫描与播放的录音根目录 | 设置页「录音目录」→ 应用并扫描；或 `POST /api/files/scan` 带 `{"dir": "..."}` |
+| `input_dir` | `<项目根>/CallRecord` | **导入来源**目录（只当来源，音频会复制进资料库） | 设置页「自动导入目录」；或 `POST /api/files/scan` 带 `{"dir": "..."}` |
+| `ingest_mode` | `copy` | 导入方式：`copy` = 复制进资料库；`link` = 同盘建硬链接（跨盘或失败自动回退 `copy`） | 设置页暂未暴露，用 `PATCH /api/settings` 或 `POST /api/files/scan` 的 `mode` |
 | `device` | `cuda:0` | 推理设备；CUDA 不可用时引擎自动回退 `cpu` | 设置页「计算设备」 |
 | `asr_model` | `paraformer-zh` | ASR 模型别名或 ModelScope id | 设置页「识别模型」（候选来自 `/api/health` 的 `ml.models.asr`） |
 | `vad_model` | `fsmn-vad` | 语音端点检测模型 | 设置页「高级」 |
@@ -222,7 +252,7 @@ funasr-flow/
 | `absorb_max_seconds` | `6.0` | 累计时长不超过此值（且 ≤3 句）才算碎片簇 | 同上 |
 | `concurrency` | `1` | 并发任务数；当前实现固定单卡串行，此键暂不生效 | 留 `1`（见 `docs/architecture.md`） |
 | `keep_wav` | `false` | 是否保留转码后的 16 kHz 中间 wav（`data/`、`.cache/tmp/`） | 设置页 checkbox |
-| `auto_scan_minutes` | `0` | 定时自动扫描间隔（分钟），`0` 关闭；到点后台扫描一次 `input_dir`，新文件自动入库 | 留 `0` 手动扫描 |
+| `auto_scan_minutes` | `0` | 定时自动导入间隔（分钟），`0` 关闭；到点后台把 `input_dir` 再导入一遍，新文件自动入库，已导入的跳过 | 留 `0` 手动导入 |
 
 环境变量（都在 `config.py` 里读取，进程启动时生效）：
 
@@ -251,12 +281,14 @@ funasr-flow/
 ## 工作原理
 
 ```text
- CallRecord/  (m4a / mp3 / amr ...)
+ 任意来源目录（CallRecord/、手机备份、容器里的 /host/d ...）
       │
-      │  POST /api/files/scan  ──► files 表（idle）
+      │  POST /api/files/scan {"dir": ...}
       ▼
- 选中文件 ──► POST /api/files/batch {action:"enqueue"}
+ 后台导入线程：逐个文件复制进 data/library（或 link 硬链接）
+ （files.rel_path 存资料库里的绝对路径，files.source_path 记来源、用于查重）──► files 表（idle）
       │
+      │  POST /api/files/batch {action:"enqueue"}
       ▼
   jobs 表（queued）── worker 循环 claim_next()：小文件优先
       │
@@ -313,6 +345,17 @@ funasr-flow mcp --server http://127.0.0.1:8000
 **显存不足 / 没有 GPU？**
 把 `device` 改成 `cpu` 即可跑，但一条 10 分钟通话可能要几分钟到十几分钟。GPU 上如果 OOM，先把 `batch_size_s` 从 `300` 降到 `120` 或 `60`，再考虑换更小的模型。队列本身是串行的，不会叠加显存。
 
+**为什么容器里 `/api/health` 的 `gpu.available` 是 `false`？**
+先看同一个响应里的 `gpu.hint`，它已经把原因写出来了，容器里常见两种情况：镜像是 CPU 版（默认 `docker build`
+装的就是 CPU 版 PyTorch），或者启动时没加 `--gpus all`。前者用
+`--build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121` 重新构建，后者补上 `--gpus all`；
+宿主机没装驱动或 Container Toolkit 时容器同样看不到卡，先跑
+`docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 验证。
+`gpu.torch_cuda` 就是 `torch.cuda.is_available()` 的结果，为 `false` 说明当前 torch 没认出 CUDA。
+
+**导入后列表里的时长是 0:00，或者文件直接变成「失败」？**
+导入/上传只登记文件，时长由后台 `ffprobe` 补：导入线程结束时会自动触发一次探测，等几秒刷新列表就有 `0:xx`；也可以点「重新扫描资料库」再触发。如果文件一直失败，先看错误文案——`音频为空或过短（不足 1 秒），已跳过` 表示音频短于 1 秒（或根本没有音频流），不是模型的问题；`没有检测到语音：这条录音可能是静音、纯音乐或过短` 表示 VAD 没切出任何有效句子（ASR 文本会先清掉孤立代理对/控制符，一个有效字符都没有的句子会被丢弃，全丢才判失败）。
+
 **Windows 控制台报 `UnicodeEncodeError: 'gbk' codec can't encode character`？**
 这是 GBK 控制台无法输出 `✔`/`✘` 之类字符。先设 `$env:PYTHONUTF8=1`（cmd 用 `set PYTHONUTF8=1`）再运行 `funasr-flow doctor`；或 `chcp 65001` 切到 UTF-8 代码页。服务本身不受影响。
 
@@ -335,7 +378,7 @@ funasr-flow mcp --server http://127.0.0.1:8000
 
 ## Roadmap
 
-- [x] 定时自动扫描（`auto_scan_minutes`）
+- [x] 定时自动导入（`auto_scan_minutes`）
 - [ ] 转写结果的纠正学习（把人工改的说话人写回声纹库）
 - [x] 设置页暴露 `merge_threshold` / `absorb_threshold` / `absorb_max_seconds`
 - [ ] 多 GPU / 多 worker 并行（当前刻意串行）
@@ -358,7 +401,7 @@ funasr-flow mcp --server http://127.0.0.1:8000
 ## English TL;DR
 
 FunASR Flow is a local-first batch transcription tool for call recordings, built on FunASR (Paraformer + CAM++), FastAPI and SQLite.
-Drop your `.m4a` files into `CallRecord/`, run `funasr-flow serve`, open <http://127.0.0.1:8000>, scan the folder and queue everything.
+Run `funasr-flow serve`, open <http://127.0.0.1:8000>, import any folder and queue everything. Importing **copies** audio into the app's own library (`data/library`, the `/data` volume in Docker), so moving the source folder, remounting, or deleting it later never breaks existing recordings or transcripts.
 Each job is transcribed with sentence timestamps, punctuation and speaker clustering on your own GPU; jobs run one at a time on a single card.
 A speaker library lets you enroll a voice once and have the same person recognized across hundreds of recordings.
 Transcripts can be corrected sentence by sentence in the browser, searched with SQLite FTS5, and exported as TXT / Markdown / SRT / JSON.

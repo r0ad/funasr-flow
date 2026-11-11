@@ -27,11 +27,13 @@
 | GET | `/api/files` | 文件列表（筛选、排序、分页） |
 | GET | `/api/files/{file_id}` | 单个文件详情 |
 | GET | `/api/files/{file_id}/audio` | 音频流（支持 Range） |
-| GET | `/api/browse` | 列目录（界面「选录音目录」用） |
-| POST | `/api/files/upload` | 上传单个音频（原始 body） |
-| POST | `/api/files/scan` | 扫描录音目录 |
+| GET | `/api/browse` | 列目录（界面「导入录音」选来源用） |
+| POST | `/api/files/upload` | 上传单个音频（原始 body，落进资料库） |
+| POST | `/api/files/scan` | 带 `dir` = 后台导入该目录；不带 `dir` = 重扫资料库 |
+| GET | `/api/files/library` | 资料库概况（文件数 / 占用）+ 当前导入进度 |
+| POST | `/api/files/import/cancel` | 取消正在跑的导入任务 |
 | POST | `/api/files/batch` | 批量入队 / 重新转写 / 删除 |
-| DELETE | `/api/files/{file_id}` | 删除文件记录（上传的副本会一并删掉） |
+| DELETE | `/api/files/{file_id}` | 删除记录；`purge=true` 时只删资料库里的副本 |
 | GET | `/api/transcripts/{file_id}` | 转写全文（句子 + 说话人） |
 | PATCH | `/api/transcripts/{file_id}/segments/{idx}` | 改一句的文字或簇标签 |
 | PATCH | `/api/transcripts/{file_id}/speakers/{cluster}` | 给某个簇改名 / 绑定声纹 |
@@ -74,7 +76,8 @@
   "python": true,
   "funasr": true,
   "torch": true,
-  "gpu": {"available": true, "name": "NVIDIA GeForce RTX 4060 Ti", "vram_mb": 16379},
+  "gpu": {"available": true, "name": "NVIDIA GeForce RTX 4060 Ti", "vram_mb": 16379,
+          "torch_cuda": true, "hint": null},
   "engines": [
     {"id": "funasr", "label": "FunASR（Paraformer + CAM++，本地离线）", "available": true, "reason": ""}
   ],
@@ -94,12 +97,31 @@
 
 `worker.thread` 表示**本进程**里是否有存活的内置 worker；用独立 `funasr-flow worker` 部署时它是 `false`，但 `heartbeat_age` 仍会更新。
 
+`gpu` 字段固定有 5 个键，不要按「有没有 hint」做分支：
+
+| 键 | 类型 | 说明 |
+| --- | --- | --- |
+| `available` | bool | `torch.cuda.is_available()` 且能取到 0 号卡时为 `true` |
+| `name` / `vram_mb` | str / int | 显卡名与显存（MB），没有 GPU 时为 `null` |
+| `torch_cuda` | bool | `torch.cuda.is_available()` 的原始结果；`false` 说明当前 torch 没认出 CUDA |
+| `hint` | str \| null | 仅在没有 GPU 时有内容，给用户一句可操作的中文说明 |
+
+`hint` 分两种场景：容器里提示「镜像可能是 CPU 版（用
+`--build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121` 重新构建），或启动时没加 `--gpus all`」；
+宿主机上提示「确认已装 NVIDIA 驱动，且 PyTorch 是 CUDA 版」。没有 GPU 时 `gpu` 长这样：
+
+```json
+{"gpu": {"available": false, "name": null, "vram_mb": null, "torch_cuda": false,
+         "hint": "容器里没检测到 GPU：镜像可能是 CPU 版（用 --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 重新构建），或启动时没加 --gpus all"}}
+```
+
 ### GET `/api/settings`
 
 ```json
 {
   "values": {
     "input_dir": "H:\\ws-ai\\funasr-flow\\CallRecord",
+    "ingest_mode": "copy",
     "device": "cuda:0",
     "asr_model": "paraformer-zh",
     "vad_model": "fsmn-vad",
@@ -136,7 +158,8 @@
 
 `merge_threshold` / `absorb_threshold` / `absorb_max_seconds` 分别控制聚类合并、碎片簇吸收阈值与碎片判定时长（详见 `docs/architecture.md`），设置页「高级」面板里可以直接调。
 
-注意：`engine` 不是设置项，选中引擎只能通过任务 `options`（见 `/api/files/batch`）；`auto_scan_minutes > 0` 时后端每 N 分钟自动扫描一次 `input_dir`，`0` 表示关闭。
+注意：`engine` 不是设置项，选中引擎只能通过任务 `options`（见 `/api/files/batch`）；`auto_scan_minutes > 0` 时后端每 N 分钟自动导入一次 `input_dir`，`0` 表示关闭。
+`ingest_mode` 取 `copy`（默认，复制进资料库）或 `link`（同盘硬链接，省一份空间）；其它值在导入时回退 `copy`。设置页暂未暴露，需要时用 PATCH 改。
 
 ### GET `/api/state`
 
@@ -152,6 +175,9 @@ SSE 推送的就是这个结构（未变化时不重复推）。
     "rtf": null
   },
   "files": {"idle": 3, "queued": 12, "running": 1, "done": 964, "failed": 2, "missing": 1},
+  "import": {"running": false, "mode": "copy", "dir": "D:/通话录音", "total": 0, "done": 0,
+             "added": 0, "skipped": 0, "failed": 0, "current": "",
+             "started_at": null, "finished_at": null, "error": null},
   "active": {"id": 977, "file_id": 13, "stage": "asr", "progress": 0.42,
              "started_at": "2025-11-11 03:20:41", "name": "2024-05-01_妈妈.m4a", "duration": 183.4},
   "worker_age": 0.8,
@@ -162,6 +188,7 @@ SSE 推送的就是这个结构（未变化时不重复推）。
 - `queue.queued_seconds` 是排队任务的音频总时长，前端用 `× rtf_est` 估算剩余时间；`queue.rtf` 目前恒为 `null`（真实值在 `/api/stats`）。
 - `active` 与 `queue.current` 内容重叠，前者少 `job_id`。
 - `worker_age` 为 `null` 表示从未有过心跳。
+- `import` 是当前（或最近一次）导入任务的进度。`running` 为真时轮询这个字段就够了；`added` **包含被覆盖的文件**，`skipped` 是来源与 `source_path` + `size` 都没变的文件，`failed` 是单个导入失败的文件（不会中断整批），`current` 是正在处理的文件名。`error` 非空表示整批失败或已取消（取消时是 `导入已取消`）。从未导入过时 `dir` 为空、计数全 0、`started_at`/`finished_at` 为 `null`。
 
 ### GET `/api/events`
 
@@ -236,7 +263,7 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
     {
       "id": 13,
       "name": "2024-05-01_妈妈.m4a",
-      "rel_path": "2024-05-01_妈妈.m4a",
+      "rel_path": "H:/ws-ai/funasr-flow/data/library/2024-05-01_妈妈.m4a",
       "ext": ".m4a",
       "size": 1827344,
       "duration": 183.4,
@@ -266,7 +293,7 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 
 ```json
 {
-  "id": 13, "name": "2024-05-01_妈妈.m4a", "rel_path": "2024-05-01_妈妈.m4a",
+  "id": 13, "name": "2024-05-01_妈妈.m4a", "rel_path": "H:/ws-ai/funasr-flow/data/library/2024-05-01_妈妈.m4a",
   "ext": ".m4a", "size": 1827344, "duration": 183.4, "status": "done",
   "error": null, "updated_at": "2025-11-11 03:22:10",
   "has_transcript": true, "model": "paraformer-zh",
@@ -285,11 +312,11 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 
 - 支持 `Range: bytes=start-end`，正常返回 206 + `Content-Range`；非法区间返回 416。
 - `Content-Type`：`.m4a`/`.mp4`/`.m4b` → `audio/mp4`；`.wav` → `audio/wav`；其余 → `audio/mpeg`。
-- 源文件被移动或删除时返回 410 `{"detail": "源文件已丢失"}`；记录不存在返回 404。
+- 资料库里的副本被删掉时返回 410 `{"detail": "资料库里的文件已丢失"}`；记录不存在返回 404。
 
 ### GET `/api/browse`
 
-给界面里的「选录音目录」用：列出目录、盘符和每个子目录里的音频数量。**不限制路径范围**
+给界面里的「导入录音」选来源用：列出目录、盘符和每个子目录里的音频数量。**不限制路径范围**
 （本机工具，和能读你磁盘的其它本地程序权限相同）；`path` 省略或无效时会回退到当前
 `input_dir`，再回退到第一个可访问的根。
 
@@ -332,26 +359,93 @@ curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import ur
 {"ok": true, "file": {"id": 981, "name": "10月13日 妈.m4a", "size": 831800, "status": "idle", "duration": null}}
 ```
 
-- 文件落在 `data/uploads/`，数据库里存**绝对路径**（扫描来的文件存相对 `input_dir` 的路径，两者共存）。
-- 文件名只取 basename，`\ / : * ? " < > |` 和控制字符会换成 `_`；重名自动加 ` (2)`。
+- 文件落在资料库 `data/library/`（容器里是 `/data/library`；代码里 `UPLOAD_DIR` 只是 `LIBRARY_DIR` 的别名，旧 `data/uploads` 已废弃），数据库里存**绝对路径**；和「导入目录」进来的文件在同一个资料库，换挂载点、重启容器都不影响。
+- 文件名只取 basename，Windows 非法字符、路径分隔符和控制字符会换成 `_`；重名自动加 ` (2)`。
 - 扩展名不在音频白名单里返回 400 `不支持的音频格式: .exe`；空 body 返回 400 `空文件`。
+- 上传不写 `source_path`（它只记导入来源），所以同一份来源文件之后再用「导入目录」导入时，会作为新文件再加一份。
 - 上传完不会自动入队，需要再调 `/api/files/batch`（或界面上点「开始转写」）。
 
 ### POST `/api/files/scan`
 
-请求体可省略；带 `dir` 时会把它写进 `input_dir`（后续扫描都默认用它）。
+同一个端点两种语义。
 
-```json
-{"dir": "D:\\通话录音"}
+**带 `dir`：把该目录当来源导入资料库**（后台线程跑，请求立刻返回）：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/files/scan \
+     -H 'Content-Type: application/json' \
+     -d '{"dir": "D:/通话录音"}'
 ```
 
 ```json
-{"ok": true, "root": "D:\\通话录音", "added": 12, "updated": 3, "missing": 1, "total": 980}
+{
+  "ok": true,
+  "importing": true,
+  "root": "D:/通话录音",
+  "import": {"running": true, "mode": "copy", "dir": "D:/通话录音", "total": 0, "done": 0,
+             "added": 0, "skipped": 0, "failed": 0, "current": "",
+             "started_at": 1762790441.2, "finished_at": null, "error": null}
+}
 ```
 
-- `added`：新发现的音频；`updated`：`size`/`mtime` 变化；`missing`：数据库里有、磁盘上已不存在。
-- 目录不存在返回 400（`detail` 为 `FileNotFoundError` 的原文）。
-- 扫描只写 `files`，同时启动后台 `ffprobe` 补时长；不会自动入队。
+- 目录（含子目录）里的音频**复制**进 `data/library/`，数据库记资料库里的绝对路径，另用 `source_path` 记来源查重；来源目录被删、换盘符都不影响已导入的录音。
+- 返回里的 `importing` 表示导入是否仍在跑：刚触发时通常为 `true`，线程结束后是 `false`；进度一律以 `import` 为准。
+- 导入结束会自动触发一次后台 `ffprobe` 补时长，新入库文件的 `duration` 先为 `null`，探测完列表里就有 `0:xx`。
+- `dir` 会写进 `input_dir`，作为设置页「自动导入目录」和 `auto_scan_minutes` 的默认来源。可选 `mode`：`copy`（默认）/ `link`（同盘硬链接）；省略时用 `ingest_mode`。
+- 进度看 `GET /api/state` 的 `import`，或 `GET /api/files/library`。同时只允许一个导入任务，已在跑时返回 **409** `{"detail": "已有导入任务在跑"}`。
+- 目录不存在返回 **400** `{"detail": "目录不存在：D:/没有这个目录"}`，且不会写 `input_dir`。
+
+**不带 `dir`：重扫资料库**（对齐磁盘变化，不导入外部目录）：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/files/scan
+```
+
+```json
+{"ok": true, "root": "H:/ws-ai/funasr-flow/data/library", "added": 0, "updated": 3, "missing": 1, "total": 980}
+```
+
+- `added`/`updated`：资料库里新增或 `size`/`mtime` 变化的文件；`missing`：记录在、资料库里的副本没了（只在本次目录范围内判定，文件回来会自动恢复 `idle`）。
+- 重扫和导入结束都会在后台用 `ffprobe` 补时长；两种语义都不自动入队。
+
+### GET `/api/files/library`
+
+资料库概况 + 当前导入进度（设置页「资料库」卡片用）：
+
+```bash
+curl -s http://127.0.0.1:8000/api/files/library
+```
+
+```json
+{
+  "ok": true,
+  "dir": "H:/ws-ai/funasr-flow/data/library",
+  "files": 980,
+  "bytes": 3741119210,
+  "import": {"running": false, "mode": "copy", "dir": "D:/通话录音", "total": 12, "done": 12,
+             "added": 10, "skipped": 2, "failed": 0, "current": "",
+             "started_at": 1762790441.2, "finished_at": 1762790450.7, "error": null}
+}
+```
+
+- `files`/`bytes` 只统计**真正落在 `LIBRARY_DIR` 里**的副本（仍指向外部目录的老记录不算）。`files` 也计入「记录还在、副本被手工删掉」的条目，`bytes` 不计（读不到大小就跳过）。
+- `import` 结构和 `/api/state` 里的一致；没跑过导入时计数全 0。
+
+### POST `/api/files/import/cancel`
+
+请求取消当前导入任务（不删已导入的文件）：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/files/import/cancel
+```
+
+```json
+{"ok": true, "import": {"running": true, "mode": "copy", "dir": "D:/通话录音", "total": 12,
+                        "done": 4, "added": 4, "skipped": 0, "failed": 0, "current": "a.m4a",
+                        "started_at": 1762790441.2, "finished_at": null, "error": null}}
+```
+
+- 取消是协作式的：后台线程处理下一个文件前停下，`import.error` 变成 `导入已取消`，`running` 随后转 `false`。没有导入在跑时也返回 200，只是什么都没发生。
 
 ### POST `/api/files/batch`
 
@@ -375,9 +469,8 @@ curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import ur
 {"ok": true, "purged": true}
 ```
 
-- 默认 `purge=true`：如果该记录的音频在 `data/uploads/` 里（也就是通过 `/api/files/upload` 上传的副本），
-  一并删掉磁盘文件；**扫描进来的原始录音永远不动**。
-- 传 `?purge=false` 只删数据库记录。删除不存在的 id 返回 404 `文件不存在`。
+- 默认 `purge=true`：如果记录里的音频在资料库（`data/library/`，上传和导入的副本都在这里），一并删掉磁盘文件；**外部来源目录里的原文件永远不动**。
+- 传 `?purge=false` 只删数据库记录；资料库外的路径（老库里的旧数据）不会被 unlink。删除不存在的 id 返回 404 `文件不存在`。
 
 ---
 
@@ -389,7 +482,7 @@ curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import ur
 
 ```json
 {
-  "file": {"id": 13, "name": "2024-05-01_妈妈.m4a", "rel_path": "2024-05-01_妈妈.m4a",
+  "file": {"id": 13, "name": "2024-05-01_妈妈.m4a", "rel_path": "H:/ws-ai/funasr-flow/data/library/2024-05-01_妈妈.m4a",
            "ext": ".m4a", "size": 1827344, "duration": 183.4, "status": "done",
            "error": null, "updated_at": "2025-11-11 03:22:10"},
   "transcript": {"id": 96, "duration": 183.4, "model": "paraformer-zh",
@@ -578,7 +671,7 @@ curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import ur
 {"ok": true, "speaker_id": 4}
 ```
 
-- 服务层的 `ValueError` 映射为 400（`文件不存在`、`源文件已丢失`、`姓名不能为空`）；ffmpeg 截取/解码失败等 `RuntimeError` 映射为 500，`detail` 为异常原文。
+- 服务层的 `ValueError` 映射为 400（`文件不存在`、`资料库里的文件已丢失`、`姓名不能为空`）；ffmpeg 截取/解码失败等 `RuntimeError` 映射为 500，`detail` 为异常原文。
 - 该接口内部用 ffmpeg 按 `-ss/-to` 截取到临时 wav，再调 CAM++ 算 embedding。
 - 想给**已存在的**人物换一段更干净的声纹（不新建、不改名），用下面的 `/enroll-from-file`。
 

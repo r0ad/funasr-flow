@@ -26,7 +26,7 @@
       </p>
     </div>
 
-    <div v-else class="grid grid-3">
+    <div v-else class="spk-grid">
       <div v-for="s in speakers" :key="s.id" class="card" style="padding: 16px">
         <div class="row" style="gap: 11px">
           <span class="avatar" :style="{ background: s.color || 'var(--accent)', width: '38px', height: '38px', borderRadius: '12px', fontSize: '15px' }">

@@ -209,7 +209,12 @@ def do_scan(body: ScanBody | None = None) -> dict:
         if not res.get("started"):
             raise HTTPException(409, res.get("reason") or "已有导入任务在跑")
         state = library.state()
-        return {"ok": True, "importing": bool(state.get("running")), "root": body.dir, "import": state}
+        return {
+            "ok": True,
+            "importing": bool(state.get("running")),
+            "root": body.dir,
+            "import": state,
+        }
 
     result = library.rescan()
     from ..services.scanner import start_duration_probe
