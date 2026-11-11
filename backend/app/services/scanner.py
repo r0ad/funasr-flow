@@ -44,11 +44,22 @@ def _walk(root: Path) -> list[os.DirEntry]:
     return out
 
 
+def abs_key(path: str | Path) -> str:
+    """统一的入库键：绝对路径 + / 分隔（扫描与上传共用一套写法）。"""
+    return str(Path(path).expanduser().resolve()).replace("\\", "/")
+
+
 def scan(root_dir: str) -> dict:
-    """扫描目录，返回 {added, updated, missing, total}。"""
+    """扫描目录，返回 {added, updated, missing, total}。
+
+    rel_path 存**绝对路径**：这样换一个录音目录扫描时，别的目录里的文件（以及上传的副本）
+    不会被误判成 missing。missing 只在本目录范围内生效。
+    """
     root = Path(root_dir).expanduser()
     if not root.is_dir():
         raise FileNotFoundError(f"目录不存在: {root}")
+    root = root.resolve()
+    prefix = abs_key(root).lower().rstrip("/") + "/"
 
     conn = get_conn()
     existing = {r["rel_path"]: r for r in conn.execute("SELECT * FROM files")}
@@ -58,8 +69,8 @@ def scan(root_dir: str) -> dict:
     entries = _walk(root)
     rows = []
     for e in entries:
-        rel = os.path.relpath(e.path, root).replace("\\", "/")
-        seen.add(rel)
+        rel = abs_key(e.path)
+        seen.add(rel.lower())
         st = e.stat()
         rows.append((rel, e.name, Path(e.name).suffix.lower().lstrip("."), st.st_size, st.st_mtime))
 
@@ -88,7 +99,13 @@ def scan(root_dir: str) -> dict:
         # 丢失
         missing = 0
         for rel, old in existing.items():
-            if rel not in seen and old["status"] != "missing":
+            if not rel.lower().startswith(prefix):
+                continue  # 不属于本次扫描的目录，别动它
+            if rel.lower() in seen:
+                if old["status"] == "missing":
+                    c.execute("UPDATE files SET status='idle' WHERE id=?", (old["id"],))
+                continue
+            if old["status"] != "missing":
                 c.execute("UPDATE files SET status='missing' WHERE id=?", (old["id"],))
                 missing += 1
     return {"added": added, "updated": updated, "missing": missing, "total": len(rows)}
@@ -126,7 +143,8 @@ def _probe_worker(root: Path) -> None:
             if not rows:
                 break
             for r in rows:
-                d = _probe_one(str(root / r["rel_path"]))
+                rel = Path(r["rel_path"])
+                d = _probe_one(str(rel if rel.is_absolute() else root / rel))
                 if d is not None:
                     with tx() as c:
                         c.execute(

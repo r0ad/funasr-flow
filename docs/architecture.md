@@ -98,7 +98,7 @@ files (1) ───< (N) jobs
 
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
-| `files` | `rel_path UNIQUE`、`name`、`ext`、`size`、`mtime`、`duration`（秒）、`status`、`error` | 录音清单，`rel_path` 相对 `input_dir` |
+| `files` | `rel_path UNIQUE`、`name`、`ext`、`size`、`mtime`、`duration`（秒）、`status`、`error` | 录音清单，`rel_path` 为**绝对路径**（扫描/上传统一），换目录扫描不会互相误判 missing |
 | `jobs` | `file_id`、`status`、`stage`、`progress`、`attempts`、`cancel_requested`、`options`(JSON)、时间戳 | 任务与参数快照；`options` 覆盖全局设置 |
 | `transcripts` | `file_id UNIQUE`、`duration`、`model`、`language`、`asr_ms` | 一次转写一行，重转即覆盖 |
 | `segments` | `transcript_id`、`idx`、`start_ms`、`end_ms`、`speaker`、`text` | `speaker` 存的是 cluster 标签（`spk0`…），不是人名 |

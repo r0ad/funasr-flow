@@ -145,7 +145,9 @@ def test_scan_add_update_missing_roundtrip(temp_db, tmp_path) -> None:
     assert first == {"added": 2, "updated": 0, "missing": 0, "total": 2}
 
     rows = {r["rel_path"] for r in temp_db.get_conn().execute("SELECT rel_path FROM files")}
-    assert rows == {"a.m4a", "sub/b.wav"}  # 统一用 / 分隔
+    # rel_path 存绝对路径（统一 / 分隔）：换目录扫描时互不误判 missing
+    assert rows == {scanner.abs_key(a), scanner.abs_key(b)}
+    assert all(r.startswith(scanner.abs_key(root)) for r in rows)
 
     # 再扫一次：没有任何变化
     assert scanner.scan(str(root)) == {"added": 0, "updated": 0, "missing": 0, "total": 2}
@@ -413,3 +415,37 @@ def test_resolve_audio_accepts_absolute_rel_path(temp_db, tmp_path) -> None:
     audio.write_bytes(b"fake")
     fid = _add_file(str(audio.resolve()), audio.name, size=4)
     assert deps.resolve_audio(fid) == audio.resolve()
+
+
+def test_scan_other_dir_does_not_mark_missing(temp_db, tmp_path) -> None:
+    """切到另一个录音目录再扫，原目录的文件不该变成 missing。"""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "a.m4a").write_bytes(b"1234")
+    (second / "b.m4a").write_bytes(b"5678")
+
+    assert scanner.scan(str(first))["added"] == 1
+    res = scanner.scan(str(second))
+    assert res == {"added": 1, "updated": 0, "missing": 0, "total": 1}
+    statuses = {
+        r["rel_path"]: r["status"]
+        for r in temp_db.get_conn().execute("SELECT rel_path, status FROM files")
+    }
+    assert statuses[scanner.abs_key(first / "a.m4a")] == "idle"
+
+
+def test_scan_unmarks_missing_when_file_returns(temp_db, tmp_path) -> None:
+    root = tmp_path / "rec"
+    root.mkdir()
+    f = root / "a.m4a"
+    f.write_bytes(b"1")
+    assert scanner.scan(str(root))["added"] == 1
+
+    f.unlink()
+    assert scanner.scan(str(root))["missing"] == 1
+    f.write_bytes(b"1")
+    scanner.scan(str(root))
+    status = temp_db.get_conn().execute("SELECT status FROM files").fetchone()["status"]
+    assert status == "idle"

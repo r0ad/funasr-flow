@@ -196,6 +196,14 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
             (k, json.dumps(v, ensure_ascii=False)),
         )
+    # 老库的 rel_path 是相对录音目录的，统一升成绝对路径（换目录扫描才不会互相误判 missing）
+    base = get_setting("input_dir")
+    if base:
+        conn.execute(
+            "UPDATE files SET rel_path = ? || '/' || rel_path "
+            "WHERE rel_path NOT LIKE '/%' AND rel_path NOT LIKE '%:%'",
+            (str(base).replace("\\", "/").rstrip("/"),),
+        )
     conn.commit()
 
 
