@@ -35,6 +35,8 @@ htmlcov/
 
 # --- Node / 前端 ---
 node_modules/
+# 构建产物不入库：本地/镜像都在构建时用 `npm run build` 生成
+frontend/dist/
 *.log
 
 # --- 编辑器 / 系统 ---

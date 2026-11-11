@@ -143,11 +143,15 @@ docs/                 architecture / api / models / llm-usage
 
 ## 构建与发布
 
-前端产物 `frontend/dist` **提交进仓库**（用户 clone 后不必装 Node 就能开界面），改动前端后必须重建：
+前端产物 `frontend/dist` **不入库**（`.gitignore` 已忽略），需要时构建：
 
 ```bash
-cd frontend && npm run build      # 产物直接覆盖 frontend/dist
+cd frontend && npm install && npm run build   # 产物 frontend/dist，后端自动托管
 ```
+
+- 直接从源码跑（非 Docker）时，必须先跑一次前端构建，否则打开 `/` 会看到「前端尚未构建」提示。
+- Docker 镜像在 stage 1 里自己构建前端，不依赖仓库里的 dist。
+- 发布 sdist/wheel 时由 `.github/workflows/release.yml` 先构建前端再打包（`MANIFEST.in` 会把 `frontend/dist` 带进 sdist）。
 
 镜像（CPU / GPU 两套 tag，同一 Dockerfile）：
 
