@@ -1,0 +1,61 @@
+# 本地 / 单机服务器部署（CPU 版镜像）。
+#
+# 首次使用：
+#   mkdir -p data cache CallRecord
+#   sudo chown -R 10001:10001 data cache      # 容器内以 uid 10001 的非 root 用户运行
+#   docker compose up -d --build
+#   open http://127.0.0.1:8000
+#
+# 目录约定与 backend/app/config.py 保持一致：
+#   FLOW_DATA_DIR=/data   -> SQLite(data/flow.db) 与导出结果(/data/transcripts)
+#   FLOW_CACHE_DIR=/cache -> modelscope / huggingface / funasr 模型缓存
+name: funasr-flow
+
+services:
+  funasr-flow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: funasr-flow:latest
+    container_name: funasr-flow
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      FLOW_DATA_DIR: /data
+      FLOW_CACHE_DIR: /cache
+      FLOW_LOG_LEVEL: INFO
+      TZ: Asia/Shanghai
+
+    volumes:
+      - ./data:/data
+      - ./cache:/cache
+      # 原始录音只读挂载；镜像内 /app/CallRecord 是指向这里的软链接（Dockerfile 里创建），
+      # 因此首次扫描的默认目录（DEFAULT_SETTINGS.input_dir）能直接命中这份录音。
+      - ./CallRecord:/data/CallRecord:ro
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+    # ------------------------------------------------------------------
+    # GPU（可选，默认关闭）
+    #
+    # 前提：
+    #   1) 宿主机已装 NVIDIA 驱动 + nvidia-container-toolkit（docker run --gpus all 可用）
+    #   2) Dockerfile 按头部注释改用 nvidia/cuda 基础镜像 + cu121 版 torch
+    # 打开后无需改代码：config.DEFAULT_SETTINGS.device 默认就是 cuda:0，
+    # engine 会自动检测 torch.cuda.is_available()。若仍跑 CPU，请在设置页把 device 改为 cpu。
+    # ------------------------------------------------------------------
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]

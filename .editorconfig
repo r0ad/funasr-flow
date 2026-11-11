@@ -1,0 +1,31 @@
+# 统一编辑器行为。Windows 下也不要提交 CRLF —— 仓库对 YAML/Python 一律用 LF。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{js,jsx,ts,tsx,vue,json,jsonc,css,scss,html}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+# Markdown 行尾两个空格表示硬换行，别被自动裁掉
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[*.{m4a,mp3,wav,amr,aac,opus,ogg,flac,mp4,webm}]
+# 二进制文件编辑器不应做任何文本处理
+insert_final_newline = false
+trim_trailing_whitespace = false

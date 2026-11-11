@@ -1,0 +1,117 @@
+name: Bug 报告
+description: 报告一个可复现的问题（安装失败、转写异常、说话人串了、界面报错等）
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先搜索已有 issue，并**务必去掉录音内容、人名和本机绝对路径**。
+        本仓库不接收任何真实通话录音（隐私风险，见 SECURITY.md）。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索过已有 issue，确认不是重复问题
+          required: true
+        - label: 我已确认日志/附件里没有真实录音、真实姓名和可识别的通话内容
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？你期望的结果是什么？
+      placeholder: 例如：扫描 40 个 m4a 后，其中 3 个一直停在 running，日志里出现 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 越具体越好；如果和某种录音格式/时长/多人对话有关，请说明（不用上传音频）。
+      placeholder: |
+        1. 把 2 个 m4a 放进 CallRecord/
+        2. 打开 http://127.0.0.1:8000 点击“扫描”
+        3. 队列选 2 个任务 -> 开始
+        4. 第 2 个任务卡在 94%
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交号
+      description: Release 版本号，或 `git rev-parse --short HEAD` 的输出
+      placeholder: "v0.1.0 / 1a2b3c4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 10 / 11
+        - Windows Server
+        - Ubuntu / Debian
+        - macOS
+        - 其他 Linux 发行版
+        - Docker / docker compose
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      options:
+        - pip install -e .
+        - pip install -e ".[asr]"
+        - Docker / docker compose
+        - python run.py 直接运行
+        - 其他（在补充信息里说明）
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 运行环境
+      description: GPU 型号 / 驱动 / CUDA、Python 版本、ffmpeg 是否可用
+      placeholder: "RTX 3060 12GB / 驱动 550 / cu121 / Python 3.11 / ffmpeg 6.0"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: 使用的模型组合
+      options:
+        - 默认（paraformer-zh + fsmn-vad + ct-punc + cam++）
+        - paraformer-large 完整版
+        - 四川话微调模型
+        - 未使用说话人分离 / 只跑 ASR
+        - 不清楚
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 报错
+      description: 请贴关键片段，长日志请裁剪。删除路径中的用户名与录音文件名。
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 截图、相关 issue、你的猜测等
+    validations:
+      required: false

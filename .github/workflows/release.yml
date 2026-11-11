@@ -1,0 +1,68 @@
+# 发布：push 形如 v0.1.0 的 tag 时，构建 sdist + wheel 并创建 GitHub Release。
+#
+# 版本号以 pyproject.toml 的 [project] version 为准；打 tag 前请先把版本号改好，
+# 建议 tag 与 pyproject 版本一致（v0.1.0 <-> 0.1.0）。
+#
+# 首次发布前需确认仓库里存在 LICENSE（pyproject 声明 MIT）与 README.md。
+name: Release
+
+"on":
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  release:
+    name: build sdist + wheel and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      # 产物：dist/funasr_flow-<version>.tar.gz + dist/funasr_flow-<version>-py3-none-any.whl
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: python -m twine check dist/*
+
+      # 保留一份 workflow artifact，便于回看某个 release 的构建产物
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+          # v0.2.0-rc1 这类带后缀的 tag 自动标记为 prerelease
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,0 +1,67 @@
+# 构建上下文瘦身：录音、模型缓存、虚拟环境、Git 历史都不进镜像。
+# 注意：不要排除 frontend/package.json、backend/、pyproject.toml。
+
+# --- 版本控制 / IDE ---
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+
+# --- 用户数据（可能含隐私录音，绝对不能进镜像）---
+CallRecord/
+data/
+cache/
+outputs/
+*.m4a
+*.mp3
+*.wav
+*.amr
+*.aac
+*.opus
+*.ogg
+*.flac
+*.mp4
+*.wma
+*.3gp
+*.silk
+*.m4b
+*.webm
+
+# --- 模型缓存（数 GB）---
+.cache/
+models/
+*.pt
+*.onnx
+*.bin
+*.safetensors
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+docs/
+
+# --- Node（前端产物在 stage 1 里重新构建，不需要带进来）---
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+
+# --- 其他 ---
+SECURITY.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+.editorconfig
+.pre-commit-config.yaml

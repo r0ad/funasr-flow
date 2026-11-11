@@ -1,0 +1,57 @@
+# 本地预提交钩子。启用：
+#   pip install pre-commit
+#   pre-commit install
+# 手动全量跑一遍：
+#   pre-commit run --all-files
+#
+# 说明：
+# - ruff 版本与 pyproject.toml 里 `[tool.ruff]` 的配置保持一致（ruff 本身未在 dev extras 里锁版本，
+#   这里锁 v0.12.10，升级 CI 时把 rev 一起改）。
+# - 生成的 frontend/dist、模型缓存、录音和数据目录一律排除，避免无意义的整文件 diff。
+
+default_install_hook_types: [pre-commit]
+
+exclude: |
+  (?x)^(
+    frontend/dist/.*|
+    frontend/node_modules/.*|
+    node_modules/.*|
+    \.cache/.*|
+    data/.*|
+    cache/.*|
+    CallRecord/.*|
+    outputs/.*|
+    \.venv/.*|
+    venv/.*
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # docker-compose.yml 里用了 `name:` 顶层键，是合法的，无需额外参数
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+        # 任何超过 2MB 的文件都不该进仓库（录音/模型/截图请用外链）
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.10
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff (format)
+        files: ^backend/

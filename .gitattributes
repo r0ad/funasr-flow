@@ -1,0 +1,67 @@
+# 文本归一化：统一以 LF 入库。本项目 core.autocrlf=false（Windows 检出也是 LF），
+# 切勿把这里的 eol 改成 crlf，否则 Python/YAML 会出现整文件 diff 噪音。
+#
+# 参考：git config --local core.autocrlf false
+* text=auto eol=lf
+
+# --- 源码 / 配置：显式 LF ---
+*.py    text eol=lf
+*.pyi   text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.sh    text eol=lf
+
+# --- 前端 ---
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.ts    text eol=lf
+*.vue   text eol=lf
+*.css   text eol=lf
+*.scss  text eol=lf
+*.html  text eol=lf
+frontend/package-lock.json text eol=lf
+
+# --- 必须保留原字节的音频/视频（否则 Git 会尝试做 EOL 转换，破坏录音）---
+*.m4a   binary
+*.wav   binary
+*.mp3   binary
+*.amr   binary
+*.aac   binary
+*.opus  binary
+*.ogg   binary
+*.flac  binary
+*.mp4   binary
+*.wma   binary
+*.3gp   binary
+*.silk  binary
+*.m4b   binary
+*.webm  binary
+
+# --- 其它二进制 ---
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.pt    binary
+*.onnx  binary
+*.bin   binary
+*.safetensors binary
+
+# --- Windows 脚本保持 CRLF ---
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# --- 归档 / 生成物不计入语言统计与 diff ---
+frontend/dist/**      linguist-generated=true
+frontend/dist/**      -diff
