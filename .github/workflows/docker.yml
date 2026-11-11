@@ -1,0 +1,134 @@
+# 镜像发布：把 CPU / GPU 两套镜像构建好并推到 Docker Hub。
+#
+# 触发：
+#   * push 到 main/master   → 推 :latest / :cpu / :gpu / :latest-gpu / :sha-<短哈希>
+#   * push tag v*           → 额外推版本号（:0.1.0、:0.1.0-gpu）
+#   * pull_request          → 只构建验证，不登录、不推送
+#   * workflow_dispatch     → 手动跑一次（可用来补发）
+#
+# 需要的仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   DOCKERHUB_USERNAME  Docker Hub 用户名（本仓库是 sunzroad）
+#   DOCKERHUB_TOKEN     带 Read & Write 权限的 Access Token（账号密码不能用）
+# 可选仓库变量（Variables）：
+#   DOCKER_IMAGE        镜像名，默认 sunzroad/funasr-flow
+#
+# 设计说明：
+#   * 两个 flavor 用一个 matrix 跑，避免复制粘贴两份 Job；
+#   * GPU 版只是换 torch 的 index-url（cu121），Dockerfile 完全相同；
+#   * 用 GitHub Actions 缓存（type=gha）缓存 npm / pip / 层，第二次构建会快很多；
+#   * runner 自带磁盘只有 ~14 GB，GPU 版镜像 6.6 GB + 构建缓存会撑爆，先清掉预装大件。
+name: Docker
+
+"on":
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "llms.txt"
+      - ".gitignore"
+      - ".editorconfig"
+      - ".pre-commit-config.yaml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "backend/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - "docker-compose*.yml"
+      - ".github/workflows/docker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ vars.DOCKER_IMAGE || 'sunzroad/funasr-flow' }}
+
+jobs:
+  publish:
+    name: build & push (${{ matrix.flavor }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: cpu
+            torch_index: https://download.pytorch.org/whl/cpu
+            suffix: ""
+          - flavor: gpu
+            torch_index: https://download.pytorch.org/whl/cu121
+            suffix: "-gpu"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          # GPU 镜像 6.6 GB + 构建缓存，14 GB 的 runner 放不下全部预装大件
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=cpu,enable=${{ matrix.flavor == 'cpu' }}
+            type=raw,value=latest,enable=${{ matrix.flavor == 'cpu' }}
+            type=raw,value=gpu,enable=${{ matrix.flavor == 'gpu' }}
+            type=raw,value=latest-gpu,enable=${{ matrix.flavor == 'gpu' }}
+            type=semver,pattern={{version}},suffix=${{ matrix.suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.suffix }}
+            type=sha,format=short,suffix=${{ matrix.suffix }}
+          labels: |
+            org.opencontainers.image.title=FunASR Flow
+            org.opencontainers.image.description=本机离线的通话录音批量转写（FunASR + 说话人分离）
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.variant=${{ matrix.flavor }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v'))) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            TORCH_INDEX_URL=${{ matrix.torch_index }}
+          cache-from: type=gha,scope=${{ matrix.flavor }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.flavor }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### 镜像 ${{ matrix.flavor }}"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "推送：${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v'))) }}"
+          } >> "$GITHUB_STEP_SUMMARY"

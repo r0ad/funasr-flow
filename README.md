@@ -18,7 +18,7 @@
 ```bash
 git clone https://github.com/r0ad/funasr-flow.git
 cd funasr-flow
-docker compose up -d --build
+docker compose up -d --build          # 第一次会构建镜像，之后直接 up -d
 ```
 
 等 1–3 分钟（第一次要拉依赖），打开 **http://127.0.0.1:8000** → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
@@ -36,6 +36,13 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 前提：宿主机装了 NVIDIA 驱动 + Container Toolkit。验证：`docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 能打出显卡信息。
+
+不想自己构建也可以直接拉发布好的镜像（CPU / GPU 两套，master 与 `v*` tag 自动发布）：
+
+```bash
+docker pull sunzroad/funasr-flow:latest       # CPU 版
+docker pull sunzroad/funasr-flow:latest-gpu   # GPU 版（需要 --gpus all 运行）
+```
 起来后进「设置」页，显卡那一行应该显示你的显卡型号；仍是 CPU 时页面会直接告诉你原因。
 
 ## 二、不用 Docker：直接装

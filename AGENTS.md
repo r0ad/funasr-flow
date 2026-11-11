@@ -165,6 +165,11 @@ docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 
 - `Dockerfile` 的 `COPY` 必须包含 `pyproject.toml run.py README.md LICENSE llms.txt`（`readme=` 与 `license-files=["LICENSE"]` 都要在镜像里）。
 - compose：`docker-compose.yml`（命名卷 `flow-data`/`flow-cache`，端口 8000，零挂载）＋ `docker-compose.gpu.yml`（换 cu121 镜像 + `deploy.resources.reservations.devices`）。校验 `docker compose config --quiet`。
 - 发布：`v*` tag 触发 `.github/workflows/release.yml`（`python -m build` + `twine check` + GitHub Release）。
+- **镜像自动发布**：`.github/workflows/docker.yml` 用 matrix 同时构建 CPU + GPU 两套镜像并推 Docker Hub
+  （`sunzroad/funasr-flow`，可用仓库变量 `DOCKER_IMAGE` 覆盖）。push 到默认分支 → `:latest`/`:cpu`/`:gpu`/`:latest-gpu`/`:sha-<短哈希>`；
+  push `v*` tag → 追加 `:0.1.0`、`:0.1.0-gpu`；PR 只构建不推；`workflow_dispatch` 可手动补发。
+  需要仓库 Secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`（Access Token，**不能用账号密码**）。
+  镜像很大（CPU 2.4GB / GPU 6.6GB），job 里先清 runner 预装大件腾磁盘，并用 `type=gha` 缓存层。
 - 容器里排查：`docker logs <name>`；GPU 是否生效看 `GET /api/health` 的 `gpu.available` 与 `gpu.hint`。
 
 ## 配置项（`DEFAULT_SETTINGS`）
