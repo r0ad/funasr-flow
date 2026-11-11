@@ -53,7 +53,7 @@ def resolve_audio(file_id: int) -> Path:
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "文件不存在")
-    # 资料库里的绝对路径；老库的相对路径兜底拼到资料库目录
+    # files.rel_path 一律是资料库里的绝对路径
     path = file_path(row["rel_path"])
     if not path.exists():
         raise HTTPException(410, "资料库里的文件已丢失")

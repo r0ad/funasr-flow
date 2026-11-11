@@ -351,33 +351,6 @@ def test_temp_path_is_closed_and_removable(tmp_path, monkeypatch) -> None:
     config.safe_unlink(p)  # 重复删除不抛异常
 
 
-def test_init_db_upgrades_old_schema(tmp_path, monkeypatch) -> None:
-    """老库缺列时 init_db 只做加法，不重建表（数据保留）。"""
-    import sqlite3
-
-    from backend.app import db as dbmod
-
-    old = tmp_path / "old.db"
-    conn = sqlite3.connect(old)
-    conn.executescript(
-        "CREATE TABLE files (id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " rel_path TEXT NOT NULL UNIQUE, name TEXT NOT NULL);"
-        "INSERT INTO files(rel_path, name) VALUES('a.m4a', 'a');"
-        "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);"
-    )
-    conn.commit()
-    conn.close()
-
-    monkeypatch.setattr(dbmod, "DB_PATH", old, raising=False)
-    monkeypatch.setattr(dbmod, "ensure_dirs", lambda: None, raising=False)
-    monkeypatch.setattr(dbmod._local, "conn", None, raising=False)
-    dbmod.init_db()
-    cols = {r[1] for r in dbmod.get_conn().execute("PRAGMA table_info(files)")}
-    assert {"status", "duration", "updated_at"} <= cols
-    rows = dbmod.get_conn().execute("SELECT COUNT(*) n FROM files").fetchone()
-    assert rows["n"] == 1  # 老数据没被删
-
-
 def test_merge_keeps_minority_speaker_with_several_sentences() -> None:
     """只说了几句的第二说话人不能被当成碎片簇吸收掉。"""
     main = _unit(1.0, 0.0)

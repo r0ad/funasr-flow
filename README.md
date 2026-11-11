@@ -133,71 +133,55 @@ npm run dev          # http://localhost:5173，/api 代理到 http://127.0.0.1:8
 ### Docker（可选）
 
 ```bash
-mkdir -p data cache CallRecord
-sudo chown -R 10001:10001 data cache      # 容器内以 uid 10001 运行
 docker compose up -d --build
 # 打开 http://127.0.0.1:8000
 ```
 
-> **数据库要放在卷里，不要绑定到网络盘。** SQLite 的 WAL 模式要求本地文件系统，把 `/data`
-> 绑定到 Windows 的映射盘（如 `H:`）会报 `sqlite3.OperationalError: disk I/O error`。`docker-compose.yml`
-> 因此用命名卷 `flow-data` 存数据库，只把录音目录只读绑进去：
->
-> ```bash
-> docker volume create flow-data
-> docker run -d --name funasr-flow -p 8000:8000 \
->   -v flow-data:/data \
->   -v /path/to/CallRecord:/data/CallRecord:ro \
->   sunzroad/funasr-flow:latest
-> ```
->
-> **想让容器读到宿主机任意目录**：容器只能看到挂载进来的路径，二选一——
->
-> ```bash
-> # 方式 A（推荐）：整盘只读挂进来，之后在网页里随便挑文件夹
-> docker run -d --name funasr-flow -p 8000:8000 \
->   -v funasr-data:/data -v funasr-cache:/cache \
->   -v "D:/:/host/d:ro" \
->   sunzroad/funasr-flow:latest
-> # 网页 → 导入录音 → 左侧点 /host/d → 点进你的通话录音文件夹 → 用这个目录
->
-> # 方式 B：只挂一个目录
-> docker run -d --name funasr-flow -p 8000:8000 \
->   -v funasr-data:/data -v funasr-cache:/cache \
->   -v "D:/我的通话录音:/media:ro" \
->   sunzroad/funasr-flow:latest
-> # 网页 → 导入录音 → 点 /media → 用这个目录
-> ```
->
-> 这些参数不用记：容器里点右上角「导入录音」，弹窗顶部会列出现有挂载，选个盘符就能
-> 复制到现成的 `docker run` 命令（数据卷沿用同一个，转写结果不会丢）。盘符写 `D:/...`
-> 或 `/d/...` 都行，记得加引号。
->
-> 导入和上传的音频都会落在命名卷里的资料库 `/data/library`（容器里 `/data` 就是资料库），
-> 不占用宿主机的绑定目录；原始录音只当导入来源，删记录时只删资料库里的副本，绑进来的原始目录永远不动。
+就这一条命令。**不需要挂载宿主机目录**：
 
-默认镜像基于 CPU 版 PyTorch，能跑通流程，只是转写慢。要用 GPU，构建和启动各多一步。
+- 录音用网页上传——把文件拖进页面，或点「上传录音」多选，走 HTTP 复制进容器里的资料库；
+- 数据（资料库副本、数据库、导出结果）默认放 Docker 命名卷里，`docker` 自己管理；
+- 想让数据落在本机文件夹（方便备份、或直接把录音拷进 `data/library/` 扫一遍），
+  把 `docker-compose.yml` 里 `- flow-data:/data` 换成 `- ./data:/data` 即可，其余不用改。
 
-**1. 宿主机准备**：装好 NVIDIA 驱动和 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)，
-先确认容器能看见显卡（没输出就先去修驱动/工具链）：
+单条 `docker run` 等价写法：
 
 ```bash
+docker run -d --name funasr-flow -p 8000:8000 \
+  -v funasr-data:/data -v funasr-cache:/cache \
+  sunzroad/funasr-flow:latest
+```
+
+> 把 `/data` 绑到网络盘/映射盘也能跑：SQLite 的 WAL 不可用时会自动退回 DELETE 日志模式
+> （`docker logs` 里有一条 warning），功能不受影响。
+
+<details>
+<summary>高级：让容器直接浏览宿主机的盘（可选，日常用不到）</summary>
+
+容器只能看到挂载进去的路径。确实想在网页里翻宿主机的盘，整盘只读挂进来：
+
+```bash
+docker run -d --name funasr-flow -p 8000:8000 \
+  -v funasr-data:/data -v funasr-cache:/cache \
+  -v "D:/:/host/d:ro" \
+  sunzroad/funasr-flow:latest
+```
+
+网页「导入录音」里点 `/host/d` 挑文件夹，选中的音频会**复制**进资料库，原始文件不动。
+
+</details>
+
+默认镜像是 CPU 版 PyTorch，能跑，只是慢（1 分钟录音约 40–60 秒）。GPU 三步：
+
+```bash
+# 1) 宿主机先确认容器能看见卡（没输出就先修驱动 / Container Toolkit）
 docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
-```
 
-**2. 构建 CUDA 版镜像**（构建参数把 PyTorch 换成 cu121 的 wheel）：
+# 2) 构建 CUDA 版镜像（PyTorch 换 cu121 wheel，约 2.5GB，做一次）
+docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 -t funasr-flow:cu121 .
 
-```bash
-docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
-  -t funasr-flow:cu121 .
-```
-
-**3. 启动时把 GPU 交给容器**：
-
-```bash
-docker run -d --name funasr-flow --gpus all -p 8000:8000 \
-  -v flow-data:/data \
-  funasr-flow:cu121
+# 3) 带 GPU 启动
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 起来后看 `GET /api/health`：`gpu.available` 应为 `true`。还是 `false` 时读 `gpu.hint`——

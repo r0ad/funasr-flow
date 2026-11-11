@@ -327,11 +327,9 @@ def test_start_import_refuses_when_one_is_running(
 
 
 # -------------------------------------------------------------------- file_path / stats
-def test_file_path_handles_absolute_and_legacy_relative(library_dir) -> None:
+def test_file_path_is_absolute_path(library_dir) -> None:
     absolute = library_dir / "a.m4a"
     assert library.file_path(str(absolute)) == absolute
-    # 老库里的相对路径兜底拼到资料库目录
-    assert library.file_path("sub/b.m4a") == library_dir / "sub" / "b.m4a"
 
 
 def test_is_in_library_only_accepts_library_paths(library_dir, tmp_path) -> None:

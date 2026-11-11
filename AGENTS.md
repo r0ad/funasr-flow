@@ -86,10 +86,16 @@ docs/                 architecture / api / models / llm-usage
 - **导入在后台线程，同时只允许一个任务**：`library.start_import()` / `import_dir()`，进度在 `library._state`，
   经 `GET /api/state` 的 `import` 与 `GET /api/files/library` 暴露；重复触发返回 409，取消走
   `POST /api/files/import/cancel`（协作式，处理下一个文件前停）。单个坏文件只计 `failed`，不中断整批。
-  注意 `added` 包含被覆盖的文件，`import_dir()` 没有独立的 `replaced` 键。
+  注意 `added` 包含被覆盖的文件，`replaced` 是其中被覆盖的数量。导入目录若就在资料库里，等价于重扫（不复制、不产生 ` (2)` 副本）。
 - **浏览目录不限制范围**：`GET /api/browse` 直接列本机文件系统（这是本地单机工具的定位），
   只挡无权限（403）和非法路径（400）；Windows 盘符靠 `_roots()` 枚举，POSIX 给 `/` 和 `~`。
-- **容器里只能浏览挂载点**：`api/system.py` 用 `/.dockerenv` 判断 Docker，把 `/media`、`/mnt`、`/data` 和整盘约定 `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint` 给 DirPicker 显示说明与命令生成。别试图在容器里读宿主机路径，只能提示用户加 `-v` 重挂；Windows 上 SQLite 也必须放命名卷（见 README Docker 段）。
+- **Docker 默认零挂载，音频走 HTTP 进来**：`docker-compose.yml` 用命名卷 `flow-data:/data` + `flow-cache:/cache`，
+  不挂任何宿主机目录；音频由网页上传（XHR → `data/library`）。`- ./data:/data` 只是可选项（想在本机文件夹里看到数据
+  或直接往 `data/library` 拷文件时用）。别把「挂载宿主机录音目录」写成必需步骤——整盘 `-v "D:/:/host/d:ro"` 属高级用法。
+- **SQLite 要能在绑定盘上跑**：`db._set_journal_mode()` 先试 WAL，失败（Windows bind mount / 网络盘没有共享内存）
+  就退回 `journal_mode=DELETE` 并 warning 一次；不要假设 WAL 一定可用，也不要把 PRAGMA 写回 `SCHEMA` 里。
+- **容器里只能浏览挂载点**：`api/system.py` 用 `/.dockerenv` 判断 Docker，把 `/media`、`/mnt`、`/data` 和整盘约定
+  `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint` 给 DirPicker 显示说明与命令生成。
 - **容器 GPU 要 cu121 构建 + `--gpus all`**：`Dockerfile` 的 `ARG TORCH_INDEX_URL` 默认是 CPU 版；要 GPU 用
   `docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .`，运行加 `--gpus all`。
   宿主机需 NVIDIA 驱动 + Container Toolkit，先跑
@@ -105,7 +111,7 @@ docs/                 architecture / api / models / llm-usage
 - 新引擎：实现 `engines/base.py` 的 `AsrEngine` Protocol 并用 `@register` 注册，不要在 pipeline 里写 `if model == ...`。
 - 新配置项：先加到 `config.DEFAULT_SETTINGS`（`/api/settings` 会按默认值类型强转并校验键名），再在代码里
   `cfg.get("key", default)` 读取；**不要**散落硬编码常量。
-- 新表/字段：改 `db.py` 的 `SCHEMA`，并保证老库可平滑升级（`init_db` 里用 `ALTER TABLE` 兜底）。
+- 新表/字段：直接改 `db.py` 的 `SCHEMA`。项目未发布，**不写老库迁移代码**；本地开发库对不上就删 `data/flow.db` 重建。
 - 前端：视图内不直接 `fetch`，一律走 `src/api.js`；全局状态走 `store.js`；样式用 `style.css` 的 CSS 变量，不要写行内颜色。
 
 ## 测试

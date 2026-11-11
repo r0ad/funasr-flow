@@ -1,11 +1,14 @@
 """SQLite 访问层：建表、连接、设置读写。
 
-单文件 SQLite + WAL，主进程和 worker 进程并发读写安全。
+单文件 SQLite，优先 WAL（主进程与内置 worker 并发读写安全）。若资料库所在
+文件系统不支持 WAL（典型：Windows 上把 data 目录 bind mount 进 Docker，
+9p/grpc-fuse 上没有共享内存），自动退回 DELETE 日志模式，保证照样能跑。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -14,13 +17,12 @@ from typing import Any
 
 from .config import DB_PATH, DEFAULT_SETTINGS, ensure_dirs
 
+log = logging.getLogger(__name__)
+
 _local = threading.local()
+_journal = {"mode": None}  # 探测一次就记住：WAL 还是 DELETE
 
 SCHEMA = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-PRAGMA foreign_keys=ON;
-
 CREATE TABLE IF NOT EXISTS files (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   rel_path    TEXT NOT NULL UNIQUE,
@@ -124,13 +126,47 @@ CREATE TABLE IF NOT EXISTS metrics (
 """
 
 
+def _set_journal_mode(conn: sqlite3.Connection) -> str:
+    """设置 SQLite 日志模式，WAL 不可用时退回 DELETE。
+
+    返回实际生效的模式。探测结果缓存到 ``_journal``，后续连接直接复用。
+    """
+    if _journal["mode"]:
+        try:
+            conn.execute(f"PRAGMA journal_mode={_journal['mode']}")
+        except sqlite3.Error:
+            pass
+        return _journal["mode"]
+
+    mode = "delete"
+    try:
+        row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        mode = str(row[0]).lower() if row else "delete"
+    except sqlite3.Error as exc:
+        log.warning("WAL 不可用（%s），改用 DELETE 日志模式", exc)
+    if mode != "wal":
+        try:
+            conn.execute("PRAGMA journal_mode=DELETE")
+        except sqlite3.Error:
+            pass
+        log.warning(
+            "资料库所在文件系统不支持 WAL（journal_mode=%s），已退回 DELETE："
+            "功能不受影响，并发写入稍慢。绑定挂载（Windows 上的 bind mount）属常见原因。",
+            mode,
+        )
+        _journal["mode"] = "DELETE"
+    else:
+        _journal["mode"] = "WAL"
+    return _journal["mode"]
+
+
 def get_conn() -> sqlite3.Connection:
     conn = getattr(_local, "conn", None)
     if conn is None:
         ensure_dirs()
         conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        _set_journal_mode(conn)
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
@@ -149,47 +185,9 @@ def tx() -> Iterator[sqlite3.Connection]:
         raise
 
 
-def _upgrade_schema(conn: sqlite3.Connection) -> None:
-    """老库平滑升级：把 SCHEMA 里新增的列补到已有表上。
-
-    只做加法（ALTER TABLE ADD COLUMN），不改类型、不删列。做法是把 SCHEMA
-    跑在内存库里，逐表比对 PRAGMA table_info，缺哪列补哪列；新库不会命中。
-    """
-    mem = sqlite3.connect(":memory:")
-    try:
-        mem.executescript(SCHEMA)
-        tables = [
-            r[0]
-            for r in mem.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            )
-        ]
-        for t in tables:
-            have = {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
-            if not have:
-                continue  # 新表已由 SCHEMA 建好
-            for _cid, col, ctype, notnull, dflt, _pk in mem.execute(f"PRAGMA table_info({t})"):
-                if col in have:
-                    continue
-                # SQLite 的 ADD COLUMN 只接受常量默认值（CURRENT_TIMESTAMP 不行）
-                const_default = (
-                    dflt is not None and "CURRENT_TIMESTAMP" not in dflt.upper() and "(" not in dflt
-                )
-                if not const_default and notnull:
-                    continue  # 无默认值的必填列无法安全补，交给发布说明
-                ddl = f'ALTER TABLE "{t}" ADD COLUMN "{col}" {ctype or "TEXT"}'
-                if const_default:
-                    ddl += f" DEFAULT {dflt}"
-                conn.execute(ddl)
-    finally:
-        mem.close()
-
-
 def init_db() -> None:
     ensure_dirs()
     conn = get_conn()
-    # 先补齐老库缺的列（SCHEMA 里的索引可能依赖新列），再建表/建索引
-    _upgrade_schema(conn)
     conn.executescript(SCHEMA)
     conn.commit()
     for k, v in DEFAULT_SETTINGS.items():
@@ -197,15 +195,6 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
             (k, json.dumps(v, ensure_ascii=False)),
         )
-    # 老库的 rel_path 是相对录音目录的，统一升成绝对路径（换目录扫描才不会互相误判 missing）
-    base = get_setting("input_dir")
-    if base:
-        conn.execute(
-            "UPDATE files SET rel_path = ? || '/' || rel_path "
-            "WHERE rel_path NOT LIKE '/%' AND rel_path NOT LIKE '%:%'",
-            (str(base).replace("\\", "/").rstrip("/"),),
-        )
-    conn.commit()
 
 
 def get_setting(key: str, default: Any = None) -> Any:

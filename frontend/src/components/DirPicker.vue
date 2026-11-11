@@ -1,61 +1,34 @@
 <template>
   <Modal :open="open" title="选择录音目录" wide @close="emit('close')">
     <div class="picker">
-      <!-- 容器提示：只能看到挂载进来的目录 -->
+      <!-- 容器提示：日常不需要挂载，音频拖进来就行 -->
       <details v-if="data.container" class="docker-tip" :open="!data.mounts.length">
         <summary class="docker-tip-head">
           <Icon name="box" :size="15" />
           <b>正在 Docker 里运行</b>
-          <span class="small">可见：{{ mountNames || '（无挂载）' }}</span>
-          <span class="small docker-tip-more">挂载宿主机目录 ▾</span>
+          <span class="small">可见：{{ mountNames || '仅资料库（/data）' }}</span>
         </summary>
         <div class="docker-tip-body">
           <div class="small">
-            容器只能看见挂载进来的目录。想选宿主机的文件夹：先生成命令、停掉容器重跑一次，
-            回来列表里就会出现对应的盘。
+            <b>日常不用挂载宿主机目录</b>：把录音文件直接拖进页面，或用「上传录音」，走 HTTP 复制进资料库。
+            这里的目录列表只包含已经挂进来的路径（资料库在 <code>/data/library</code>）。
           </div>
-
-          <div class="docker-modes">
-            <label class="docker-mode">
-              <input v-model="mountMode" type="radio" value="drive" />
-              整个盘（推荐，之后进 /host/盘符 挑文件夹）
-            </label>
-            <label class="docker-mode">
-              <input v-model="mountMode" type="radio" value="dir" />
-              只挂一个目录
-            </label>
-          </div>
-
-          <div v-if="mountMode === 'drive'" class="docker-line">
-            <span class="small">宿主机盘符</span>
+          <div v-if="hostRoots.length" class="docker-line">
+            <span class="small">已挂载的盘</span>
             <button
-              v-for="d in drives"
-              :key="d"
+              v-for="r in hostRoots"
+              :key="r.path"
               class="chip"
-              :class="{ on: drive === d }"
-              @click="pickDrive(d)"
+              :class="{ on: same(r.path, data.path) }"
+              @click="go(r.path)"
             >
-              {{ d }}:
+              {{ r.name }}
             </button>
-            <span class="small">→ 容器 /host/{{ drive.toLowerCase() }}</span>
           </div>
-
-          <div v-else class="docker-line">
-            <input
-              v-model="hostPath"
-              class="input mono docker-input"
-              placeholder="宿主机目录，如 D:\\我的通话录音"
-            />
-            <select v-model="target" class="input docker-sel">
-              <option v-for="p in mountChoices" :key="p" :value="p">{{ p }}</option>
-            </select>
+          <div v-else class="small">
+            想临时翻一下宿主机的盘，可以整盘只读挂进来（可选）：
+            <code>-v "D:/:/host/d:ro"</code>，详见 README 的 Docker 段。
           </div>
-
-          <div class="docker-actions">
-            <button class="btn sm" @click="copyCmd">复制命令</button>
-            <span class="small">粘到终端执行；数据卷不变，已转写的结果不会丢</span>
-          </div>
-          <pre class="docker-cmd">{{ cmd }}</pre>
         </div>
       </details>
 
@@ -164,49 +137,11 @@ const manual = ref('')
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
-const hostPath = ref('')
-const target = ref('/media')
-const mountMode = ref('drive')
-const drive = ref('D')
-const drives = ['C', 'D', 'E', 'F', 'G', 'H']
-
-// 容器内可选的挂载点：已存在的 + 常用的备用名
-const mountChoices = computed(() => {
-  const have = (data.mounts || []).map((m) => m.path)
-  const extra = ['/media', '/media2', '/mnt', '/recordings'].filter((p) => !have.includes(p))
-  return [...have, ...extra]
-})
 const mountNames = computed(() => (data.mounts || []).map((m) => m.path).join('、'))
-
-// 生成一条可直接粘贴的 docker run：数据/缓存用命名卷，录音目录只读挂载
-const cmd = computed(() => {
-  const image = data.image || 'sunzroad/funasr-flow:latest'
-  let mount
-  if (mountMode.value === 'drive') {
-    const d = drive.value.toUpperCase()
-    mount = `  -v "${d}:\\:/host/${d.toLowerCase()}:ro" \\`
-  } else {
-    const host = hostPath.value.trim() || 'D:\\我的通话录音'
-    mount = `  -v "${host}:${target.value}:ro" \\`
-  }
-  return [
-    'docker rm -f funasr-flow',
-    'docker run -d --name funasr-flow --restart unless-stopped -p 8000:8000 \\',
-    '  -e TZ=Asia/Shanghai \\',
-    '  -v funasr-data:/data -v funasr-cache:/cache \\',
-    mount,
-    `  ${image}`,
-  ].join('\n')
-})
-
-async function copyCmd() {
-  try {
-    await navigator.clipboard.writeText(cmd.value)
-    toast('命令已复制，粘贴到终端执行后刷新页面', 'ok')
-  } catch {
-    toast('复制失败，请手动选中命令复制', 'err')
-  }
-}
+// 容器里额外挂进来的整盘（/host/<盘符>），用于快速跳转
+const hostRoots = computed(() =>
+  (data.roots || []).filter((r) => /^\/host\/[a-z]$/i.test(r.path || '')),
+)
 
 // 把绝对路径拆成可点的面包屑（Windows 盘符也当一段）
 const crumbs = computed(() => {
@@ -228,13 +163,6 @@ function same(a, b) {
   return a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
 }
 
-// 点盘符：既切换生成命令用的盘，也直接跳进容器里对应的 /host/<盘符>
-function pickDrive(d) {
-  drive.value = d
-  const want = `/host/${d.toLowerCase()}`
-  if ((data.roots || []).some((r) => (r.path || '').toLowerCase() === want)) go(want)
-}
-
 async function go(path) {
   // 空字符串是有意义的：后端会回退到「当前录音目录」或第一个盘符
   if (path === null) return
@@ -244,12 +172,6 @@ async function go(path) {
     const res = await api.browse(path)
     Object.assign(data, res)
     manual.value = res.path
-    // 当前就在整盘挂载点里 → 让挂载方式与盘符跟着走，免得生成命令和看到的目录对不上
-    const m = /^\/host\/([a-z])(?=\/|$)/i.exec(res.path || '')
-    if (m) {
-      mountMode.value = 'drive'
-      drive.value = m[1].toUpperCase()
-    }
   } catch (e) {
     error.value = e.message
   } finally {
@@ -402,45 +324,6 @@ watch(
   display: flex;
   gap: 8px;
   align-items: center;
-}
-.docker-input {
-  flex: 1;
-  font-size: 12.5px;
-}
-.docker-sel {
-  width: 130px;
-  font-size: 12.5px;
-}
-.docker-cmd {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-x: auto;
-  white-space: pre;
-  color: var(--text-2, var(--text));
-}
-.docker-modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 12.5px;
-}
-.docker-mode {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-.docker-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 .docker-tip summary {
   cursor: pointer;

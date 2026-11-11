@@ -1,19 +1,10 @@
-# 本地 / 单机服务器部署（CPU 版镜像）。
+# 本地 / 单机服务器部署（CPU 版镜像；GPU 见 docker-compose.gpu.yml）。
 #
-# 首次使用：
-#   mkdir -p cache CallRecord
-#   sudo chown -R 10001:10001 cache           # 容器内以 uid 10001 的非 root 用户运行
-#   docker compose up -d --build
-#   open http://127.0.0.1:8000
+#   docker compose up -d --build     # 然后打开 http://127.0.0.1:8000
 #
-# 为什么 SQLite 用命名卷而不是 ./data 绑定目录：
-#   SQLite 的 WAL 需要真正的本地文件系统。如果你的录音放在网络盘/虚拟盘（例如 Windows 的
-#   H: 映射盘）上，把 /data 绑定到那个盘会直接报 `sqlite3.OperationalError: disk I/O error`。
-#   所以数据库放命名卷，录音单独只读绑定到 /data/CallRecord —— 读文件没问题，写库留在卷里。
-#
-# 目录约定与 backend/app/config.py 保持一致：
-#   FLOW_DATA_DIR=/data   -> SQLite(data/flow.db) 与导出结果(/data/transcripts)
-#   FLOW_CACHE_DIR=/cache -> modelscope / huggingface / funasr 模型缓存
+# 音频怎么进来：不需要挂载任何宿主机目录 —— 网页里直接拖入文件，走 HTTP 上传进资料库。
+# 数据默认放命名卷里（docker 自己管理）；想在本机文件夹里看到它，把下面 volumes 里
+# flow-data 那行换成注释里的绑定写法即可（绑到网络盘也没问题，SQLite 会自动降级日志模式）。
 name: funasr-flow
 
 services:
@@ -35,11 +26,12 @@ services:
       TZ: Asia/Shanghai
 
     volumes:
+      # 资料库 + 数据库 + 导出结果；默认命名卷，不用管宿主机路径
       - flow-data:/data
-      - ./cache:/cache
-      # 原始录音只读挂载；镜像内 /app/CallRecord 是指向这里的软链接（Dockerfile 里创建），
-      # 因此首次扫描的默认目录（DEFAULT_SETTINGS.input_dir）能直接命中这份录音。
-      - ./CallRecord:/data/CallRecord:ro
+      # 想放到本机文件夹（方便备份/直接拷录音进去）就删掉上一行，改用这一行：
+      # - ./data:/data
+      - flow-cache:/cache
+      # 模型缓存同理，想复用本机已有的模型可以换成：- ./cache:/cache
 
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
@@ -48,25 +40,6 @@ services:
       retries: 3
       start_period: 90s
 
-    # ------------------------------------------------------------------
-    # GPU（可选，默认关闭）
-    #
-    # 前提：
-    #   1) 宿主机已装 NVIDIA 驱动 + nvidia-container-toolkit（docker run --gpus all 可用）
-    #   2) 用 cu121 版 torch 构建镜像：
-    #        docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
-    #          -t sunzroad/funasr-flow:0.1.0-gpu .
-    #      并在下面的 deploy.resources 打开 reservations（等价 docker run --gpus all）
-    # 打开后无需改代码：config.DEFAULT_SETTINGS.device 默认就是 cuda:0，
-    # engine 会自动检测 torch.cuda.is_available()。若仍跑 CPU，请在设置页把 device 改为 cpu。
-    # ------------------------------------------------------------------
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
 volumes:
   flow-data:
+  flow-cache:

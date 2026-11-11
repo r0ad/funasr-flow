@@ -51,12 +51,8 @@ _cancel = {"on": False}
 
 # --------------------------------------------------------------------------- 路径工具
 def file_path(rel_path: str | Path) -> Path:
-    """把 files.rel_path 还原成磁盘路径。
-
-    新数据一律是绝对路径；老库里可能还有相对 input_dir 的写法，兜底拼到资料库目录。
-    """
-    p = Path(str(rel_path))
-    return p if p.is_absolute() else LIBRARY_DIR / p
+    """把 files.rel_path 还原成磁盘路径（入库时一律写绝对路径）。"""
+    return Path(str(rel_path))
 
 
 def is_in_library(path: str | Path) -> bool:
@@ -105,6 +101,21 @@ def import_one(src: Path, mode: str = "copy") -> dict:
     st = src.stat()
     key = abs_key(src)
     conn = get_conn()
+
+    if is_in_library(src):
+        # 源文件本来就在资料库里（用户直接把音频拷进 data/library 后点了「导入这个目录」）：
+        # 不复制、不产生 " (2)" 副本，缺记录就补一条，其余交给「重新扫描资料库」。
+        row = conn.execute("SELECT id FROM files WHERE rel_path=?", (key,)).fetchone()
+        if row is not None:
+            return {"status": "skipped", "id": int(row["id"]), "path": key}
+        with tx() as c:
+            cur = c.execute(
+                "INSERT INTO files(rel_path, source_path, name, ext, size, mtime) VALUES(?,?,?,?,?,?)",
+                (key, None, src.name, src.suffix.lower(), st.st_size, st.st_mtime),
+            )
+            fid = int(cur.lastrowid or 0)
+        return {"status": "added", "id": fid, "path": key}
+
     old = conn.execute(
         "SELECT id, rel_path, size FROM files WHERE source_path=?", (key,)
     ).fetchone()
@@ -159,6 +170,19 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
         raise FileNotFoundError(f"目录不存在: {root_path}")
     if mode not in INGEST_MODES:
         mode = "copy"
+
+    if is_in_library(root_path):
+        # 直接导入资料库目录本身 = 重扫一遍，把手工拷进来的音频登记上
+        res = rescan()
+        return {
+            "dir": str(root_path),
+            "total": res["total"],
+            "added": res["added"],
+            "skipped": 0,
+            "replaced": 0,
+            "failed": 0,
+            "rescanned": True,
+        }
 
     files: list[Path] = []
     for dirpath, _dirnames, filenames in os.walk(root_path):
