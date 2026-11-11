@@ -15,6 +15,7 @@ DATA_DIR = Path(os.environ.get("FLOW_DATA_DIR", ROOT / "data"))
 OUT_DIR = DATA_DIR / "transcripts"
 CACHE_DIR = Path(os.environ.get("FLOW_CACHE_DIR", ROOT / ".cache"))
 TMP_DIR = CACHE_DIR / "tmp"
+UPLOAD_DIR = DATA_DIR / "uploads"  # 界面上传的录音落在这里（应用自己管理的目录）
 DB_PATH = DATA_DIR / "flow.db"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
@@ -83,5 +84,5 @@ def safe_unlink(path: Path) -> None:
 
 
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, OUT_DIR, CACHE_DIR, TMP_DIR):
+    for d in (DATA_DIR, OUT_DIR, CACHE_DIR, TMP_DIR, UPLOAD_DIR):
         d.mkdir(parents=True, exist_ok=True)

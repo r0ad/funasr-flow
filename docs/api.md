@@ -27,9 +27,11 @@
 | GET | `/api/files` | 文件列表（筛选、排序、分页） |
 | GET | `/api/files/{file_id}` | 单个文件详情 |
 | GET | `/api/files/{file_id}/audio` | 音频流（支持 Range） |
+| GET | `/api/browse` | 列目录（界面「选录音目录」用） |
+| POST | `/api/files/upload` | 上传单个音频（原始 body） |
 | POST | `/api/files/scan` | 扫描录音目录 |
 | POST | `/api/files/batch` | 批量入队 / 重新转写 / 删除 |
-| DELETE | `/api/files/{file_id}` | 删除文件记录 |
+| DELETE | `/api/files/{file_id}` | 删除文件记录（上传的副本会一并删掉） |
 | GET | `/api/transcripts/{file_id}` | 转写全文（句子 + 说话人） |
 | PATCH | `/api/transcripts/{file_id}/segments/{idx}` | 改一句的文字或簇标签 |
 | PATCH | `/api/transcripts/{file_id}/speakers/{cluster}` | 给某个簇改名 / 绑定声纹 |
@@ -285,6 +287,50 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 - `Content-Type`：`.m4a`/`.mp4`/`.m4b` → `audio/mp4`；`.wav` → `audio/wav`；其余 → `audio/mpeg`。
 - 源文件被移动或删除时返回 410 `{"detail": "源文件已丢失"}`；记录不存在返回 404。
 
+### GET `/api/browse`
+
+给界面里的「选录音目录」用：列出目录、盘符和每个子目录里的音频数量。**不限制路径范围**
+（本机工具，和能读你磁盘的其它本地程序权限相同）；`path` 省略或无效时会回退到当前
+`input_dir`，再回退到第一个可访问的根。
+
+```
+GET /api/browse?path=H:/ws-ai/funasr-flow
+```
+
+```json
+{
+  "path": "H:\\ws-ai\\funasr-flow",
+  "parent": "H:\\ws-ai",
+  "sep": "\\",
+  "roots": [{"name": "C:", "path": "C:\\"}, {"name": "H:", "path": "H:\\"}],
+  "entries": [{"name": "CallRecord", "path": "H:\\ws-ai\\funasr-flow\\CallRecord", "audio": 980}],
+  "audio": 0
+}
+```
+
+- `entries` 只列子目录（跳过 `.` 开头的），**里面有录音的排在前面**；`audio` 是该目录（不递归）的音频数。
+- 无权限返回 403 `{"detail": "没有权限读取: ..."}`，其它读取失败返回 400。
+
+### POST `/api/files/upload`
+
+上传一个音频文件：**请求体是文件的原始字节**（不是 multipart），文件名通过查询参数传。
+这样后端不需要 `python-multipart` 依赖，前端用 XHR 直传 `File` 对象即可拿到上传进度。
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import urllib.parse;print(urllib.parse.quote('10月13日 妈.m4a'))")" \
+     -H 'Content-Type: application/octet-stream' \
+     --data-binary @"/path/to/10月13日 妈.m4a"
+```
+
+```json
+{"ok": true, "file": {"id": 981, "name": "10月13日 妈.m4a", "size": 831800, "status": "idle", "duration": null}}
+```
+
+- 文件落在 `data/uploads/`，数据库里存**绝对路径**（扫描来的文件存相对 `input_dir` 的路径，两者共存）。
+- 文件名只取 basename，`\ / : * ? " < > |` 和控制字符会换成 `_`；重名自动加 ` (2)`。
+- 扩展名不在音频白名单里返回 400 `不支持的音频格式: .exe`；空 body 返回 400 `空文件`。
+- 上传完不会自动入队，需要再调 `/api/files/batch`（或界面上点「开始转写」）。
+
 ### POST `/api/files/scan`
 
 请求体可省略；带 `dir` 时会把它写进 `input_dir`（后续扫描都默认用它）。
@@ -319,7 +365,13 @@ data: {"queue":{"queued":12,"running":1,...},"files":{"done":964,...},"active":{
 
 ### DELETE `/api/files/{file_id}`
 
-删除记录，返回 `{"ok": true}`。磁盘上的录音不会删。删除不存在的 id 同样返回 `{"ok": true}`（幂等）。
+```json
+{"ok": true, "purged": true}
+```
+
+- 默认 `purge=true`：如果该记录的音频在 `data/uploads/` 里（也就是通过 `/api/files/upload` 上传的副本），
+  一并删掉磁盘文件；**扫描进来的原始录音永远不动**。
+- 传 `?purge=false` 只删数据库记录。删除不存在的 id 返回 404 `文件不存在`。
 
 ---
 

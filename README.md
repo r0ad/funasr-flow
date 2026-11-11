@@ -86,10 +86,13 @@ funasr-flow doctor
 
    首次启动会从 ModelScope 下载模型到项目的 `.cache/`（约 2 GB），之后完全离线。
 3. 浏览器打开 <http://127.0.0.1:8000>。
-4. 点右上角「扫描目录」→ 列表出现录音 → 勾选（或全选）→「开始转写」。
+4. 点右上角「选录音目录」→ 在弹窗里挑盘符/子目录（有录音的目录会标出「N 个录音」）→「用这个目录」；
+   也可以直接点「上传录音」或把音频文件拖进页面，文件会复制到 `data/uploads/` 并自动入库。
 5. 转写完成后点某一行「查看转写」：左边播放、右边逐句文字，点文字即可修改。
 
-只扫描、不开网页：
+不想用网页也可以只扫描：
+
+
 
 ```bash
 funasr-flow scan                 # 扫描默认目录
@@ -143,6 +146,21 @@ docker compose up -d --build
 >   -v /path/to/CallRecord:/data/CallRecord:ro \
 >   sunzroad/funasr-flow:latest
 > ```
+>
+> **想让容器读到宿主机任意目录**：多挂一个只读卷，然后在网页右上角「选录音目录」里选到它即可
+> （选目录弹窗列的是**容器内**的文件系统，所以挂载点会出现在里面）：
+>
+> ```bash
+> docker run -d --name funasr-flow -p 8000:8000 \
+>   -v flow-data:/data \
+>   -v "D:/我的通话录音:/media:ro" \
+>   sunzroad/funasr-flow:latest
+> # 打开网页 → 选录音目录 → 点 D: 之外的根目录/直接输入 /media → 用这个目录
+> ```
+> Windows 路径里的盘符用 `D:/...` 或 `/d/...` 都行，记得加引号。
+>
+> 上传的文件会落在命名卷 `flow-data` 里（`/data/uploads`），不占用宿主机的绑定目录；
+> 删除记录时这些上传副本会被一起删掉，扫描进来的原始录音永远不动。
 
 镜像基于 CPU 版 PyTorch，适合跑通流程或小批量；GPU 需要把 `Dockerfile` 换成 CUDA 基镜像并打开 `docker-compose.yml` 里注释掉的 `deploy.resources` 段（见文件头部注释）。
 

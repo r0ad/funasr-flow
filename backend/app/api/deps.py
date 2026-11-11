@@ -52,7 +52,9 @@ def resolve_audio(file_id: int) -> Path:
     row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "文件不存在")
-    path = Path(str(get_setting("input_dir"))) / Path(row["rel_path"])
+    rel = Path(row["rel_path"])
+    # 上传的文件直接存绝对路径；扫描来的文件存相对 input_dir 的路径
+    path = rel if rel.is_absolute() else Path(str(get_setting("input_dir"))) / rel
     if not path.exists():
         raise HTTPException(410, "源文件已丢失")
     return path

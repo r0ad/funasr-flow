@@ -57,7 +57,10 @@
           <label>录音目录</label>
           <div class="row">
             <input v-model="form.input_dir" class="input mono" style="flex: 1" />
-            <button class="btn" @click="changeDir">应用并扫描</button>
+            <button class="btn" @click="browserOpen = true">
+              <Icon name="folder" :size="15" /> 浏览…
+            </button>
+            <button class="btn primary" @click="changeDir">应用并扫描</button>
           </div>
           <span class="hint">手机通话录音所在文件夹，支持 .m4a .mp3 .wav .amr .aac 等。扫描只登记文件，不会复制或上传。</span>
         </div>
@@ -195,10 +198,18 @@
       所有数据都在本机：录音不复制，转写结果存在 <code>data/flow.db</code>，模型缓存在 <code>.cache/</code>。
     </p>
   </div>
+
+  <DirPicker
+    :open="browserOpen"
+    :start="form.input_dir"
+    @close="browserOpen = false"
+    @picked="onDirPicked"
+  />
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import DirPicker from '../components/DirPicker.vue'
 import Icon from '../components/Icon.vue'
 import { api } from '../api'
 import { refreshHealth, refreshStats, store, toast } from '../store'
@@ -207,6 +218,7 @@ const settings = ref(null)
 const form = reactive({})
 const saving = ref(false)
 const health = computed(() => store.health)
+const browserOpen = ref(false)
 const live = computed(() => store.live)
 
 const dirtyCount = computed(() => {
@@ -254,6 +266,11 @@ async function save() {
 
 function reset() {
   for (const k of Object.keys(settings.value)) form[k] = settings.value[k]
+}
+
+function onDirPicked(path) {
+  form.input_dir = path
+  reload()
 }
 
 async function changeDir() {

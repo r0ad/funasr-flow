@@ -54,6 +54,29 @@ export const api = {
   batch: (ids, action, options) =>
     request('/api/files/batch', { method: 'POST', body: { ids, action, options } }),
   deleteFile: (id) => request(`/api/files/${id}`, { method: 'DELETE' }),
+  browse: (path) => request(`/api/browse${qs({ path })}`),
+  // 上传单个音频：请求体是原始字节（后端用 raw body 收，免 multipart 依赖）。
+  // 用 XHR 而不是 fetch —— 只有 XHR 能拿到上传进度。
+  uploadFile: (file, onProgress) =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${BASE}/api/files/upload${qs({ name: file.name })}`)
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        let data = {}
+        try {
+          data = JSON.parse(xhr.responseText)
+        } catch {
+          /* 非 JSON 错误体 */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+        else reject(new ApiError(data.detail || `上传失败 (${xhr.status})`, xhr.status))
+      }
+      xhr.onerror = () => reject(new ApiError('上传失败：无法连接后端服务', 0))
+      xhr.send(file)
+    }),
   audioUrl: (id) => `${BASE}/api/files/${id}/audio`,
 
   // ---- 转写结果

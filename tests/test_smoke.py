@@ -394,3 +394,22 @@ def test_merge_keeps_minority_speaker_with_several_sentences() -> None:
     assert alias["spk1"] == "spk0"
     assert alias["spk2"] == "spk2"
     assert [u.cluster for u in utts if u.text != "嗯"] == ["spk0"] + ["spk2"] * 6
+
+
+def test_safe_name_strips_path_and_requires_audio_ext() -> None:
+    """上传的文件名只保留 basename，且必须是音频扩展名。"""
+    from backend.app.api.files import _safe_name
+
+    assert _safe_name("C:\\Users\\r0ad\\通话 记录 (1).m4a") == "通话 记录 (1).m4a"
+    assert _safe_name("../../etc/passwd.wav") == "passwd.wav"
+    assert _safe_name("a<b>c|d.m4a") == "a_b_c_d.m4a"
+    with pytest.raises(HTTPException):
+        _safe_name("木马.exe")
+
+
+def test_resolve_audio_accepts_absolute_rel_path(temp_db, tmp_path) -> None:
+    """上传的录音以绝对路径入库，resolve_audio 要能直接用。"""
+    audio = tmp_path / "上传的录音.m4a"
+    audio.write_bytes(b"fake")
+    fid = _add_file(str(audio.resolve()), audio.name, size=4)
+    assert deps.resolve_audio(fid) == audio.resolve()

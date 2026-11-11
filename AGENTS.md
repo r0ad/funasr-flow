@@ -73,6 +73,12 @@ docs/                 architecture / api / models / llm-usage
   实测 2 人通话会被 FunASR 切成 3 簇，第三簇往往只有 1–2 句噪声。
 - **质心标签必须自证**：`spk_embedding_center` 可能是 dict / ndarray / list，用 `_iter_centers` 归一；
   标签和句子 spk 对不上时宁可丢弃质心，也不能把 A 的声纹记到 B 头上。
+- **两条入库路径必须都通**：`services/scanner.scan()` 扫目录（`rel_path` 存**相对 input_dir**），
+  `api/files.py` 的 `/upload` 收上传（`rel_path` 存**绝对路径**，文件在 `data/uploads/`）。
+  `api/deps.resolve_audio` 靠 `Path(rel_path).is_absolute()` 区分两者——改任一侧都要同时改另一侧和删除逻辑
+  （删除时只有 `data/uploads/` 里的副本会被 `purge`，用户手机里的原始录音永远不动）。
+- **浏览目录不限制范围**：`GET /api/browse` 直接列本机文件系统（这是本地单机工具的定位），
+  只挡无权限（403）和非法路径（400）；Windows 盘符靠 `_roots()` 枚举，POSIX 给 `/` 和 `~`。
 - **搜索**：FTS5 `trigram` 分词，查询词 < 3 字必须走 LIKE 回退（`api/transcripts.py`），不要改成分词器。
 - **导出文件名**：中文文件名必须用 RFC 5987 `filename*=UTF-8''…`，`latin-1` 会乱码。
 

@@ -23,6 +23,27 @@ curl -s -X POST $BASE/api/files/scan -H 'Content-Type: application/json' -d '{"d
 
 不传 `dir` 就扫当前设置里的 `input_dir`。新增/改动的文件会入库为 `idle`，并顺带补齐时长。
 
+**不知道有哪些目录可选**：`GET /api/browse?path=` 会返回盘符/根、父目录和每个子目录里的音频数量
+（`entries[].audio`），可以用它逐层往下找录音目录——界面上的「选录音目录」就是调这个接口。
+
+```bash
+curl -s "$BASE/api/browse?path=D:/" | python -c "import json,sys;d=json.load(sys.stdin);print(d['path']);[print(' ',e['name'],e['audio']) for e in d['entries'][:10]]"
+```
+
+**文件不在本机目录里（或只有几个）**：直接上传，比让 agent 去猜路径省事。
+
+```bash
+# 文件名放查询参数，body 是文件原始字节；上传后是 idle，需要再入队
+curl -s -X POST "$BASE/api/files/upload?name=10月13日%20妈.m4a" \
+     -H 'Content-Type: application/octet-stream' --data-binary @"D:/临时/10月13日 妈.m4a"
+# {"ok":true,"file":{"id":981,"name":"10月13日 妈.m4a","status":"idle"}}
+
+# 然后照常入队
+curl -s -X POST $BASE/api/files/batch -H 'Content-Type: application/json' -d '{"ids":[981],"action":"enqueue"}'
+```
+
+上传的副本放在 `data/uploads/`（删记录时会连文件一起删），扫描进来的原始录音不会被删。
+
 ## 2. 看清单、挑要处理的文件
 
 ```bash

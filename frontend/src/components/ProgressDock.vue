@@ -1,5 +1,13 @@
 <template>
-  <div v-if="visible" class="dock card" :class="{ compact: !active }">
+  <div
+    v-if="visible"
+    class="dock card"
+    :class="{ compact: !active, dragging: dragActive }"
+    :style="dockStyle"
+    :title="pos ? '拖动可移动；双击回到右下角' : '拖动可移动'"
+    @pointerdown="startDrag"
+    @dblclick="resetPos"
+  >
     <template v-if="active">
       <div class="dock-head">
         <span class="badge accent"><span class="bullet" />转写中</span>
@@ -47,6 +55,83 @@ import { api } from '../api'
 import { STAGE_META, fmtDuration, store, toast } from '../store'
 
 const dismissed = ref(false)
+const pos = ref(loadPos()) // {left, top}，null 表示用默认的右下角
+const dragActive = ref(false)
+let drag = null
+
+const dockStyle = computed(() =>
+  pos.value ? { left: `${pos.value.left}px`, top: `${pos.value.top}px`, right: 'auto', bottom: 'auto' } : null,
+)
+
+function loadPos() {
+  try {
+    const raw = localStorage.getItem('flow.dockPos')
+    if (!raw) return null
+    const p = JSON.parse(raw)
+    if (typeof p?.left === 'number' && typeof p?.top === 'number') return clamp(p)
+  } catch {
+    /* 忽略坏数据 */
+  }
+  return null
+}
+
+function clamp(p) {
+  const w = 300
+  const h = 150
+  return {
+    left: Math.max(0, Math.min(p.left, window.innerWidth - w)),
+    top: Math.max(0, Math.min(p.top, window.innerHeight - h)),
+  }
+}
+
+function startDrag(e) {
+  // 按钮、链接不参与拖动，避免点不动
+  if (e.target.closest('button, a, input, select')) return
+  const el = e.currentTarget
+  const r = el.getBoundingClientRect()
+  drag = { dx: e.clientX - r.left, dy: e.clientY - r.top }
+  dragActive.value = true
+  pos.value = { left: r.left, top: r.top }
+  try {
+    el.setPointerCapture(e.pointerId)
+  } catch {
+    /* 某些浏览器不支持，忽略 */
+  }
+  window.addEventListener('pointermove', onDrag)
+  window.addEventListener('pointerup', endDrag)
+}
+
+function onDrag(e) {
+  if (!drag) return
+  pos.value = clamp({ left: e.clientX - drag.dx, top: e.clientY - drag.dy })
+}
+
+function endDrag() {
+  drag = null
+  dragActive.value = false
+  window.removeEventListener('pointermove', onDrag)
+  window.removeEventListener('pointerup', endDrag)
+  if (pos.value) {
+    try {
+      localStorage.setItem('flow.dockPos', JSON.stringify(pos.value))
+    } catch {
+      /* 隐私模式等场景写不了，忽略 */
+    }
+  }
+}
+
+function resetPos() {
+  pos.value = null
+  try {
+    localStorage.removeItem('flow.dockPos')
+  } catch {
+    /* 忽略 */
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (pos.value) pos.value = clamp(pos.value)
+})
 const active = computed(() => store.live?.active || null)
 const queue = computed(() => store.live?.queue || {})
 
@@ -88,6 +173,8 @@ async function cancelAll() {
   bottom: 18px;
   right: 20px;
   width: 300px;
+  cursor: grab;
+  touch-action: none; /* 让 pointermove 拖动在触屏上也生效 */
   padding: 11px 13px;
   z-index: 45;
   animation: slidein 0.16s ease;
@@ -106,6 +193,10 @@ async function cancelAll() {
 }
 .dock.compact {
   padding: 9px 12px;
+}
+.dock.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 @media (max-width: 760px) {
   .dock {

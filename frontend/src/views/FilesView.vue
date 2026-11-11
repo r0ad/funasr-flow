@@ -1,5 +1,11 @@
 <template>
-  <div class="stack" style="gap: 14px">
+  <div
+    class="stack"
+    style="gap: 14px"
+    @dragover.prevent="onDragOver"
+    @dragleave.prevent="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <!-- 状态筛选 -->
     <div class="row wrap">
       <button
@@ -23,6 +29,51 @@
           @input="onSearchInput"
         />
       </div>
+      <button class="btn sm" :disabled="uploading" @click="pickFiles">
+        <Icon name="upload" :size="15" />
+        {{ uploading ? `上传中 ${uploadPct}%` : '上传录音' }}
+      </button>
+      <input
+        ref="fileInput"
+        type="file"
+        accept="audio/*,.m4a,.mp3,.wav,.amr,.aac,.flac,.ogg,.opus,.wma,.mp4,.3gp,.m4b,.webm"
+        multiple
+        class="vh"
+        @change="onPick"
+      />
+    </div>
+
+    <!-- 上传队列 -->
+    <div v-if="uploads.length" class="card" style="padding: 10px 14px">
+      <div class="row" style="justify-content: space-between">
+        <b class="small">上传队列（{{ uploads.filter((u) => u.status === 'done').length }}/{{ uploads.length }}）</b>
+        <span class="row" style="gap: 6px">
+          <span v-if="uploading" class="small muted">上传中…</span>
+          <button class="btn ghost icon sm" title="关闭" @click="dismissUploads">
+            <Icon name="x" :size="14" />
+          </button>
+        </span>
+      </div>
+      <div v-for="(u, i) in uploads" :key="i" style="margin-top: 8px">
+        <div class="row" style="justify-content: space-between">
+          <span class="small truncate" style="max-width: 70%">{{ u.name }}</span>
+          <span class="small" :style="{ color: u.status === 'error' ? 'var(--err)' : 'var(--muted)' }">
+            {{ u.status === 'done' ? '完成' : u.status === 'error' ? u.error : `${u.pct}%` }}
+          </span>
+        </div>
+        <div class="bar" style="margin-top: 4px; height: 4px">
+          <span :style="{ width: `${u.pct}%`, background: u.status === 'error' ? 'var(--err)' : undefined }" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 拖拽提示 -->
+    <div v-if="dragging" class="drop-mask">
+      <div class="drop-box">
+        <Icon name="upload" :size="26" />
+        <b>松开即上传到录音库</b>
+        <span class="small muted">支持 .m4a .mp3 .wav .amr .aac 等，可一次拖多个</span>
+      </div>
     </div>
 
     <!-- 列表 -->
@@ -30,7 +81,9 @@
       <div v-if="loading && !items.length" class="empty">加载中…</div>
       <div v-else-if="!items.length" class="empty">
         <h3>这里还没有录音</h3>
-        <p class="small">把手机里的通话录音放进 <code>CallRecord/</code>，或点右上角「扫描目录」。</p>
+        <p class="small">
+          把手机里的通话录音放进 <code>CallRecord/</code>，点右上角「扫描目录」选文件夹，或直接把文件拖进这个页面。
+        </p>
         <button class="btn primary" style="margin-top: 14px" @click="scanNow">扫描录音目录</button>
       </div>
 
@@ -189,6 +242,15 @@ const offset = ref(0)
 const loading = ref(false)
 const selected = ref(new Set())
 const exportFmt = ref('txt')
+const fileInput = ref(null)
+const dragging = ref(false)
+const uploads = ref([]) // {name, pct, status: 'uploading'|'done'|'error', error}
+const uploading = ref(false)
+const uploadPct = computed(() => {
+  const list = uploads.value.filter((u) => u.status === 'uploading')
+  if (!list.length) return 100
+  return Math.round(list.reduce((a, u) => a + u.pct, 0) / list.length)
+})
 
 const TABS = [
   { key: 'all', label: '全部' },
@@ -355,6 +417,86 @@ async function scanNow() {
   }
 }
 
+// ---- 上传 ----
+function pickFiles() {
+  // 用隐藏 input 触发系统选择框；不用 hidden 属性，避免个别浏览器忽略 click()
+  fileInput.value?.click()
+}
+
+let uploadHideTimer = null
+
+function dismissUploads() {
+  clearTimeout(uploadHideTimer)
+  uploads.value = []
+}
+
+function onPick(e) {
+  const files = [...(e.target.files || [])]
+  e.target.value = ''
+  if (files.length) uploadAll(files)
+}
+
+let dragDepth = 0
+function onDragOver(e) {
+  // 只有拖进来的是文件才提示
+  if (e.dataTransfer?.types?.includes('Files')) {
+    dragDepth += 1
+    dragging.value = true
+  }
+}
+
+function onDragLeave() {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dragging.value = false
+}
+
+function onDrop(e) {
+  dragDepth = 0
+  dragging.value = false
+  const files = [...(e.dataTransfer?.files || [])]
+  if (files.length) uploadAll(files)
+}
+
+async function uploadAll(files) {
+  uploading.value = true
+  const items = files.map((f) => ({ name: f.name, pct: 0, status: 'uploading', error: '' }))
+  uploads.value = [...items, ...uploads.value]
+  let ok = 0
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i]
+    const row = items[i]
+    try {
+      await api.uploadFile(file, (pct) => {
+        row.pct = pct
+      })
+      row.pct = 100
+      row.status = 'done'
+      ok += 1
+    } catch (e) {
+      row.status = 'error'
+      row.error = e.message
+    }
+    uploads.value = [...uploads.value]
+  }
+  uploading.value = false
+  uploads.value = [...uploads.value]
+  if (ok) {
+    toast(`已上传 ${ok} 个录音${ok < files.length ? `，${files.length - ok} 个失败` : ''}`, 'ok')
+    offset.value = 0
+    await load()
+    store.reloadTick++
+    // 全部成功后 6 秒自动收起上传队列，失败项留着让人看清原因
+    if (ok === files.length) {
+      clearTimeout(uploadHideTimer)
+      uploadHideTimer = setTimeout(() => {
+        uploads.value = []
+      }, 6000)
+    }
+  } else {
+    toast('上传失败，请检查文件格式', 'err')
+  }
+}
+
 function shortDate(s) {
   if (!s) return '—'
   return String(s).replace('T', ' ').slice(5, 16)
@@ -369,3 +511,36 @@ watch(() => store.reloadTick, () => load())
 
 onMounted(load)
 </script>
+
+<style scoped>
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.drop-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 46px;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--accent);
+}
+</style>

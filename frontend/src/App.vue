@@ -34,9 +34,9 @@
           <span class="sub">{{ subtitle }}</span>
         </div>
         <div class="spacer" />
-        <button class="btn sm" :disabled="scanning" @click="doScan">
-          <Icon name="scan" :size="15" />
-          {{ scanning ? '扫描中…' : '扫描目录' }}
+        <button class="btn sm" :disabled="scanning" @click="pickerOpen = true">
+          <Icon name="folder" :size="15" />
+          {{ scanning ? '扫描中…' : '选录音目录' }}
         </button>
       </header>
 
@@ -47,12 +47,14 @@
 
     <ProgressDock />
     <Toasts />
+    <DirPicker :open="pickerOpen" @close="pickerOpen = false" @picked="onDirPicked" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import DirPicker from './components/DirPicker.vue'
 import Icon from './components/Icon.vue'
 import ProgressDock from './components/ProgressDock.vue'
 import Toasts from './components/Toasts.vue'
@@ -61,6 +63,7 @@ import { fmtDuration, refreshHealth, refreshStats, store, toast } from './store'
 
 const route = useRoute()
 const scanning = ref(false)
+const pickerOpen = ref(false)
 
 const nav = computed(() => {
   const pending = store.live?.queue?.queued || 0
@@ -96,6 +99,11 @@ const connText = computed(() =>
 const connColor = computed(() =>
   store.connection === 'online' ? 'var(--ok)' : store.connection === 'offline' ? 'var(--err)' : 'var(--warn)',
 )
+
+function onDirPicked() {
+  refreshStats()
+  store.reloadTick++
+}
 
 async function doScan() {
   scanning.value = true

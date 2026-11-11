@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -16,6 +18,7 @@ from pydantic import BaseModel
 from ..config import CACHE_DIR, DEFAULT_SETTINGS, MODEL_CHOICES, ROOT
 from ..db import all_settings, get_conn, get_metric, set_setting
 from ..services import queue as q
+from ..services.scanner import AUDIO_EXTS
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -28,6 +31,107 @@ def set_worker_thread(t: threading.Thread | None) -> None:
 
 class SettingsPatch(BaseModel):
     values: dict[str, Any]
+
+
+# ------------------------------------------------------------------ 目录浏览
+def _roots() -> list[dict]:
+    """可选的起点：Windows 给盘符，其他系统给 / 和家目录。"""
+    out: list[dict] = []
+    if os.name == "nt":
+        for letter in "CDEFGHIJKLMNOPQRSTUVWXYZAB":
+            drive = f"{letter}:\\"
+            if os.path.isdir(drive):
+                out.append({"name": drive.rstrip("\\"), "path": drive})
+    else:
+        out.append({"name": "/", "path": "/"})
+        home = str(Path.home())
+        if home != "/":
+            out.append({"name": "~", "path": home})
+    return out
+
+
+def _count_audio(path: Path, limit: int = 20000) -> int:
+    """数当前目录里（不递归）有多少个音频文件，最多数 limit 个条目。"""
+    n = 0
+    try:
+        with os.scandir(path) as it:
+            for i, entry in enumerate(it):
+                if i >= limit:
+                    break
+                try:
+                    if entry.is_file() and Path(entry.name).suffix.lower() in AUDIO_EXTS:
+                        n += 1
+                except OSError:
+                    continue
+    except OSError:
+        return 0
+    return n
+
+
+@router.get("/browse")
+def browse(path: str | None = None) -> dict:
+    """列出目录，供界面里的「选择录音目录」用（本机工具，默认不限制范围）。"""
+    roots = _roots()
+    raw = path or str(get_setting_safe("input_dir") or "")
+    target = Path(raw).expanduser() if raw else None
+    if target is None or not target.is_dir():
+        # 回退：路径无效时给第一个可访问的根
+        for r in roots:
+            if Path(r["path"]).is_dir():
+                target = Path(r["path"])
+                break
+    if target is None or not target.is_dir():
+        raise HTTPException(400, f"目录不存在: {raw}")
+
+    try:
+        target = target.resolve()
+    except OSError:
+        pass
+
+    entries: list[dict] = []
+    try:
+        with os.scandir(target) as it:
+            for entry in it:
+                try:
+                    if not entry.is_dir() or entry.name.startswith("."):
+                        continue
+                except OSError:
+                    continue
+                child = Path(entry.path)
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": str(child),
+                        "audio": _count_audio(child),
+                    }
+                )
+    except PermissionError as exc:
+        raise HTTPException(403, f"没有权限读取: {target}") from exc
+    except OSError as exc:
+        raise HTTPException(400, f"读取失败: {exc}") from exc
+
+    # 有录音的子目录排前面，其次按名字
+    entries.sort(key=lambda e: (-e["audio"], e["name"].lower()))
+    try:
+        parent = str(target.parent) if target.parent != target else None
+    except OSError:
+        parent = None
+
+    return {
+        "path": str(target),
+        "parent": parent,
+        "sep": os.sep,
+        "roots": roots,
+        "entries": entries,
+        "audio": _count_audio(target),
+    }
+
+
+def get_setting_safe(key: str) -> Any:
+    try:
+        return all_settings().get(key)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ------------------------------------------------------------------ 健康

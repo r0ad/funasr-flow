@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ..config import UPLOAD_DIR
 from ..db import get_conn, get_setting, tx
 from ..services import queue as q
+from ..services.scanner import AUDIO_EXTS
 from ..services.scanner import scan as scan_dir
 from .deps import file_dict, resolve_audio, speaker_color, stream_audio
 
@@ -21,6 +25,64 @@ SORTS = {
     "status": "f.status",
     "updated": "f.updated_at",
 }
+
+
+_BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _safe_name(name: str) -> str:
+    """只留文件名本身，压掉路径分隔符和 Windows 非法字符。"""
+    base = Path(str(name).replace("\\", "/")).name
+    base = _BAD_CHARS.sub("_", base).strip(" .") or "录音"
+    stem, ext = Path(base).stem, Path(base).suffix.lower()
+    if ext not in AUDIO_EXTS:
+        raise HTTPException(400, f"不支持的音频格式: {ext or '（无扩展名）'}")
+    return f"{stem[:80]}{ext}"
+
+
+@router.post("/upload")
+async def upload(request: Request, name: str = Query(..., description="原始文件名")) -> dict:
+    """接收单个音频文件（请求体是原始字节），存到 data/uploads/ 后登记入库。
+
+    不走 multipart：省掉 python-multipart 依赖，界面用 XHR 直传文件对象即可。
+    """
+    filename = _safe_name(name)
+    # 若传了子目录（界面上传时保留用户选的相对路径），只取最后一段，避免目录穿越
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    target = UPLOAD_DIR / filename
+    n = 2
+    while target.exists():
+        target = UPLOAD_DIR / f"{Path(filename).stem} ({n}){Path(filename).suffix}"
+        n += 1
+
+    size = 0
+    try:
+        with target.open("wb") as fh:
+            async for chunk in request.stream():
+                if chunk:
+                    fh.write(chunk)
+                    size += len(chunk)
+    except Exception as exc:  # noqa: BLE001
+        target.unlink(missing_ok=True)
+        raise HTTPException(500, f"写入失败: {exc}") from exc
+
+    if size == 0:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, "空文件")
+
+    rel = str(target.resolve())
+    now = time.time()
+    with tx() as c:
+        cur = c.execute(
+            "INSERT INTO files(rel_path, name, ext, size, mtime) VALUES(?,?,?,?,?)",
+            (rel, target.name, target.suffix.lower(), size, now),
+        )
+        fid = int(cur.lastrowid or 0)
+    row = get_conn().execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
+    return {
+        "ok": True,
+        "file": file_dict(row, has_transcript=False, model=None, segment_count=0, speakers=[]),
+    }
 
 
 @router.get("")
@@ -169,7 +231,22 @@ def batch(body: BatchBody) -> dict:
 
 
 @router.delete("/{file_id}")
-def delete_file(file_id: int) -> dict:
+def delete_file(file_id: int, purge: bool = True) -> dict:
+    """删除记录。上传到 data/uploads/ 的文件是本应用自己的副本，默认一并删掉；
+    扫描进来的原始录音永远不动（那是用户的手机文件）。"""
+    conn = get_conn()
+    row = conn.execute("SELECT rel_path FROM files WHERE id=?", (file_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "文件不存在")
+    path = Path(row["rel_path"])
     with tx() as c:
         c.execute("DELETE FROM files WHERE id=?", (file_id,))
-    return {"ok": True}
+    removed = False
+    if purge:
+        try:
+            if path.is_absolute() and path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+                path.unlink(missing_ok=True)
+                removed = True
+        except OSError:
+            removed = False
+    return {"ok": True, "purged": removed}
