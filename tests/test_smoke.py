@@ -571,3 +571,33 @@ def test_get_engine_reuses_instance():
     registry.release_engine("funasr")
     assert registry.get_engine("funasr") is not first
     registry.reset_engines()
+
+
+def test_list_files_limit_is_clamped(temp_db):
+    """上限 1000，避免一次拉太多把浏览器拖死；下限 1。"""
+    from backend.app.api import files as files_api
+
+    assert files_api.list_files(limit=99999)["limit"] == 1000
+    assert files_api.list_files(limit=0)["limit"] == 1
+
+
+def test_export_all_packages_every_transcript(temp_db):
+    for name in ("a.m4a", "b.m4a"):
+        fid = _add_file(f"/lib/{name}", name, status="done")
+        tid = _add_transcript(fid)
+        _add_segment(tid, 0, 0, 1500, "spk0", f"{name} 的内容。")
+    _add_file("/lib/c.m4a", "c.m4a")  # 没有转写结果，不应进 zip
+
+    resp = transcripts.export(ids=None, format="txt", export_all=True, status=None)
+    assert resp.media_type == "application/zip"
+    import io
+    import zipfile
+
+    names = zipfile.ZipFile(io.BytesIO(resp.body)).namelist()
+    assert sorted(names) == ["a.txt", "b.txt"]
+
+
+def test_export_requires_ids_or_all(temp_db):
+    with pytest.raises(HTTPException) as ei:
+        transcripts.export(ids=None, format="txt", export_all=False, status=None)
+    assert ei.value.status_code == 400

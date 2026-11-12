@@ -59,11 +59,38 @@
           class="btn ghost"
           :disabled="!canBulk"
           title="把所有还没转写的录音一次性排进队列"
-          @click="transcribeAll"
+          @click="transcribeAll(false)"
         >
           <Icon name="zap" :size="15" />
           全部转写
         </button>
+        <button
+          class="btn ghost"
+          :disabled="!total"
+          title="把所有录音（含已完成的）重新转写一遍"
+          @click="transcribeAll(true)"
+        >
+          <Icon name="refresh" :size="15" />
+          全部重转
+        </button>
+        <div class="row" style="gap: 6px">
+          <button class="btn ghost" :disabled="!total" title="导出全部转写结果" @click="exportAll(exportAllFmt)">
+            <Icon name="download" :size="15" />
+            全部导出
+          </button>
+          <select
+            v-model="exportAllFmt"
+            class="select"
+            style="height: 29px; font-size: 12.5px"
+            title="全部导出的格式"
+            @change="exportAll(exportAllFmt)"
+          >
+            <option value="txt">TXT</option>
+            <option value="md">Markdown</option>
+            <option value="srt">SRT</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
         <button class="btn primary" @click="openImport">
           <Icon name="folder" :size="15" />
           导入录音
@@ -222,8 +249,17 @@
         </table>
       </div>
 
-      <div v-if="total > limit" class="pager" style="padding: 12px 16px; border-top: 1px solid var(--border)">
+      <div v-if="total > 0" class="pager" style="padding: 12px 16px; border-top: 1px solid var(--border)">
         <span class="small muted">共 {{ total }} 个</span>
+        <select
+          v-model.number="limit"
+          class="select"
+          style="height: 29px; font-size: 12.5px; margin-left: 10px"
+          title="每页显示条数"
+          @change="onLimitChange"
+        >
+          <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }} / 页</option>
+        </select>
         <span class="spacer" />
         <button class="btn sm ghost icon" :disabled="offset === 0" title="上一页" @click="goPage(-1)">
           <Icon name="back" :size="14" />
@@ -278,11 +314,13 @@ const activeTab = ref('all')
 const sort = reactive({ field: 'name', order: 'asc' })
 const items = ref([])
 const total = ref(0)
-const limit = ref(50)
+const PAGE_SIZES = [20, 50, 100, 200, 500, 1000]
+const limit = ref(loadPageSize())
 const offset = ref(0)
 const loading = ref(false)
 const selected = ref(new Set())
 const exportFmt = ref('txt')
+const exportAllFmt = ref('txt')
 const dragging = ref(false)
 const uploads = ref([]) // {name, pct, status: 'uploading'|'done'|'error', error}
 const uploading = ref(false)
@@ -329,6 +367,22 @@ const page = computed(() => Math.floor(offset.value / limit.value) + 1)
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
 const allOnPageSelected = computed(() => items.value.length > 0 && items.value.every((f) => selected.value.has(f.id)))
 const someSelected = computed(() => selected.value.size > 0 && !allOnPageSelected.value)
+
+function loadPageSize() {
+  const saved = Number(localStorage.getItem('flow.pageSize'))
+  return PAGE_SIZES.includes(saved) ? saved : 50
+}
+
+function onLimitChange() {
+  localStorage.setItem('flow.pageSize', String(limit.value))
+  offset.value = 0
+  load()
+}
+
+function exportAll(fmt) {
+  if (!total.value) return
+  window.location.href = api.exportAllUrl(fmt)
+}
 
 async function load() {
   loading.value = true
@@ -422,19 +476,25 @@ async function enqueueOne(f) {
   }
 }
 
-async function transcribeAll() {
+async function transcribeAll(redo = false) {
   try {
-    const pre = await api.transcribeAll({ dry_run: true })
-    if (!pre.candidates) return toast('没有待转写的录音了', 'ok')
+    const pre = await api.transcribeAll({ dry_run: true, redo })
+    if (!pre.candidates) {
+      return toast(redo ? '没有可以重转的录音' : '没有待转写的录音了', 'ok')
+    }
     const audio = fmtDuration(pre.seconds)
     const eta = pre.eta_seconds ? `，按当前速度预计 ${fmtDuration(pre.eta_seconds)}` : ''
     const ok = confirm(
-      `把 ${pre.candidates} 条录音加入队列？\n共约 ${audio} 音频${eta}。\n\n` +
+      `${redo ? '把全部录音重新转写一遍' : '把还没转写的录音加入队列'}？\n` +
+        `共 ${pre.candidates} 条，约 ${audio} 音频${eta}。\n\n` +
         '入队后按文件从短到长串行转写，随时可以在排队卡片里停止。',
     )
     if (!ok) return
-    const res = await api.transcribeAll({})
-    toast(`已加入队列 ${res.queued} 条${res.skipped ? `，跳过 ${res.skipped} 条` : ''}`, 'ok')
+    const res = await api.transcribeAll({ redo })
+    toast(
+      `已加入队列 ${res.queued} 条${res.skipped ? `，跳过 ${res.skipped} 条` : ''}`,
+      'ok',
+    )
     load()
   } catch (e) {
     toast(e.message, 'err')

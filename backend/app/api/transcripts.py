@@ -341,12 +341,45 @@ def _disposition(fname: str) -> str:
 
 
 @router.get("/export")
-def export(ids: str = Query(...), format: str = "txt") -> Response:
-    try:
-        file_ids = [int(x) for x in ids.split(",") if x.strip()]
-    except ValueError as e:
-        raise HTTPException(400, "ids 参数格式错误") from e
+def export(
+    ids: str | None = None,
+    format: str = "txt",
+    export_all: bool = Query(False, alias="all"),
+    status: str | None = None,
+) -> Response:
+    """导出转写结果。
+
+    传 `ids` 导出指定录音（多个打包 zip）；不传 `ids` 且 `all=1` 时导出全部
+    已有转写结果的录音（可用 `status` 再过滤），适合「全部导出」。
+    """
     fmt = format if format in {"txt", "md", "srt", "json"} else "txt"
+    file_ids: list[int] = []
+    if ids:
+        try:
+            file_ids = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError as e:
+            raise HTTPException(400, "ids 参数格式错误") from e
+    elif export_all:
+        where = "t.id IS NOT NULL"
+        params: list = []
+        if status:
+            codes = [c.strip() for c in status.split(",") if c.strip()]
+            where += f" AND f.status IN ({','.join('?' * len(codes))})"
+            params.extend(codes)
+        rows = (
+            get_conn()
+            .execute(
+                f"""SELECT f.id FROM files f JOIN transcripts t ON t.file_id=f.id
+                WHERE {where} ORDER BY f.name""",
+                params,
+            )
+            .fetchall()
+        )
+        file_ids = [r["id"] for r in rows]
+    else:
+        raise HTTPException(400, "缺少 ids（或用 all=1 导出全部）")
+    if not file_ids:
+        raise HTTPException(404, "没有可导出的转写结果")
 
     if len(file_ids) == 1:
         fname, blob = _export_text(file_ids[0], fmt)

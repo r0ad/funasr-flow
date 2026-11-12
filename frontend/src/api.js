@@ -116,6 +116,8 @@ export const api = {
   // ---- 搜索 / 导出
   search: (q, limit = 60) => request(`/api/search${qs({ q, limit })}`),
   exportUrl: (ids, format) => `${BASE}/api/export${qs({ ids: ids.join(','), format })}`,
+  // 导出全部已有转写结果的录音（打包 zip）
+  exportAllUrl: (format, status) => `${BASE}/api/export${qs({ all: 1, format, status })}`,
 
   // ---- 声纹库
   listSpeakers: () => request('/api/speakers'),

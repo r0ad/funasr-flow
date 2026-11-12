@@ -114,6 +114,8 @@ def list_files(
     limit: int = 50,
     offset: int = 0,
 ) -> dict:
+    limit = max(1, min(int(50 if limit is None else limit), 1000))
+    offset = max(0, int(offset or 0))
     where, params = [], []
     if status:
         codes = [s.strip() for s in status.split(",") if s.strip()]
