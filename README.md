@@ -21,12 +21,12 @@ cd funasr-flow
 docker compose up -d            # 拉取现成镜像并启动（约 720MB 压缩，第一次几分钟）
 ```
 
-等它就绪，打开 **http://127.0.0.1:8000** → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
+等它就绪，打开 <http://127.0.0.1:8000> → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
 
 > 音频是在**浏览器里**读你电脑上的文件再上传的，Docker **不需要挂载任何目录**。
 
 想从当前源码自己构建而不是拉镜像：`docker compose up -d --build`（多等几分钟）。
-端口 8000 被占用时：`FLOW_PORT=8011 docker compose up -d`，然后开 http://127.0.0.1:8011。
+端口 8000 被占用时：`FLOW_PORT=8011 docker compose up -d`，然后开 <http://127.0.0.1:8011>。
 日志：`docker compose logs -f funasr-flow`。
 
 ### 有 NVIDIA 显卡（更快）
@@ -84,7 +84,7 @@ pip install -e ".[asr]"
 python run.py
 ```
 
-打开 http://127.0.0.1:8000。想先自检环境：`funasr-flow doctor`。
+打开 <http://127.0.0.1:8000>。想先自检环境：`funasr-flow doctor`。
 
 ## 三、用起来是什么样
 
