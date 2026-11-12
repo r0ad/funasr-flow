@@ -105,10 +105,7 @@
         <div class="form-grid">
           <div class="field">
             <label>识别模型</label>
-            <input v-model="form.asr_model" class="input" list="asr-models" />
-            <datalist id="asr-models">
-              <option v-for="m in asrModels" :key="m.id" :value="m.id">{{ m.label }} · {{ m.size }}</option>
-            </datalist>
+            <ModelPicker v-model="form.asr_model" :options="asrModels" placeholder="输入或选择识别模型 id" />
             <span v-if="asrChoice" class="hint">
               <b>{{ asrChoice.label }}</b> · {{ asrChoice.size }}<br />{{ asrChoice.note }}
             </span>
@@ -203,10 +200,7 @@
             </div>
             <div class="field">
               <label>标点</label>
-              <input v-model="form.punc_model" class="input mono" list="punc-models" />
-              <datalist id="punc-models">
-                <option v-for="m in puncModels" :key="m.id" :value="m.id">{{ m.label }}</option>
-              </datalist>
+              <ModelPicker v-model="form.punc_model" :options="puncModels" placeholder="标点模型 id" />
             </div>
             <div class="field">
               <label>并发数</label>
@@ -268,6 +262,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import Icon from '../components/Icon.vue'
+import ModelPicker from '../components/ModelPicker.vue'
 import { api } from '../api'
 import { fmtBytes, refreshHealth, refreshStats, store, toast } from '../store'
 
