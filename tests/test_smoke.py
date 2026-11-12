@@ -558,3 +558,16 @@ def test_transcribe_all_noop_when_nothing_to_do(temp_db):
     assert res["candidates"] == 0
     assert res["queued"] == 0
     assert res["job_ids"] == []
+
+
+def test_get_engine_reuses_instance():
+    from backend.app.engines import registry
+
+    registry.reset_engines()
+    registry.load_builtin()
+    first = registry.get_engine("funasr")
+    again = registry.get_engine("funasr")
+    assert first is again
+    registry.release_engine("funasr")
+    assert registry.get_engine("funasr") is not first
+    registry.reset_engines()
