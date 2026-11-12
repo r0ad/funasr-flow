@@ -18,32 +18,51 @@
 ```bash
 git clone https://github.com/r0ad/funasr-flow.git
 cd funasr-flow
-docker compose up -d --build          # 第一次会构建镜像，之后直接 up -d
+docker compose up -d            # 拉取现成镜像并启动（约 720MB 压缩，第一次几分钟）
 ```
 
-等 1–3 分钟（第一次要拉依赖），打开 **http://127.0.0.1:8000** → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
+等它就绪，打开 **http://127.0.0.1:8000** → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
 
 > 音频是在**浏览器里**读你电脑上的文件再上传的，Docker **不需要挂载任何目录**。
 
+想从当前源码自己构建而不是拉镜像：`docker compose up -d --build`（多等几分钟）。
+端口 8000 被占用时：`FLOW_PORT=8011 docker compose up -d`，然后开 http://127.0.0.1:8011。
+日志：`docker compose logs -f funasr-flow`。
+
 ### 有 NVIDIA 显卡（快 20 倍以上）
 
-```bash
-# 只构建一次（约 2.5GB 下载）
-docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
-  -t funasr-flow:cu121 .
+一条命令就够 —— 它会拉取构建好的 CUDA 镜像，并把显卡交给容器：
 
+```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-前提：宿主机装了 NVIDIA 驱动 + Container Toolkit。验证：`docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 能打出显卡信息。
+想自己从源码构建 CUDA 镜像则加 `--build`（要多下约 2.5GB 的 torch cu121）：
 
-不想自己构建也可以直接拉发布好的镜像（CPU / GPU 两套，master 与 `v*` tag 自动发布）：
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+前提：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。先验证一句：
+`docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 能打出显卡信息。
+
+起来后进「设置」页，显卡那一行应该显示你的显卡型号。**如果显示的是 CPU**，页面会直接告诉你原因（`gpu.hint`），常见三种：
+
+1. 启动时没带 GPU 覆盖文件 —— 用上面带 `-f docker-compose.gpu.yml` 的命令；
+2. 镜像是 CPU 版 —— 确认 `docker compose ... config | grep image` 是 `sunzroad/funasr-flow:latest-gpu`；
+3. 宿主机没装 Container Toolkit —— 第一条验证命令会失败。
+
+也可以直接用 `docker run`（发布好的两套镜像，master 与 `v*` tag 自动更新）：
 
 ```bash
 docker pull sunzroad/funasr-flow:latest       # CPU 版
-docker pull sunzroad/funasr-flow:latest-gpu   # GPU 版（需要 --gpus all 运行）
+docker pull sunzroad/funasr-flow:latest-gpu   # GPU 版
+
+# GPU 版必须给显卡，否则容器里 torch 看不到卡
+docker run -d --name funasr-flow --gpus all -p 8000:8000 \
+  -v funasr-data:/data -v funasr-cache:/cache \
+  sunzroad/funasr-flow:latest-gpu
 ```
-起来后进「设置」页，显卡那一行应该显示你的显卡型号；仍是 CPU 时页面会直接告诉你原因。
 
 ## 二、不用 Docker：直接装
 

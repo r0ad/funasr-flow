@@ -100,8 +100,9 @@ docs/                 architecture / api / models / llm-usage
 - **容器里只能浏览挂载点**：`api/system.py` 用 `/.dockerenv` 判断 Docker，把 `/media`、`/mnt`、`/data` 和整盘约定
   `/host/<盘符>` 列进 `roots` 最前面，并返回 `container`/`mounts`/`hint`。这是给 CLI/agent 的兜底；
   界面上传路径不需要任何挂载，别把「挂载宿主机目录」做成使用前提。
-- **容器 GPU 要 cu121 构建 + `--gpus all`**：`Dockerfile` 的 `ARG TORCH_INDEX_URL` 默认是 CPU 版；要 GPU 用
-  `docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .`，运行加 `--gpus all`。
+- **容器 GPU 要 CUDA 版镜像 + `--gpus all`**：`Dockerfile` 的 `ARG TORCH_INDEX_URL` 默认是 CPU 版。日常用法是
+  `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`（拉 `:latest-gpu` 并把显卡交给容器）；
+  从源码构建才需要 `--build`，`docker-compose.gpu.yml` 里已把 `TORCH_INDEX_URL` 覆盖成 cu121。
   宿主机需 NVIDIA 驱动 + Container Toolkit，先跑
   `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 验证。
   `/api/health` 的 `gpu.hint` 会说清是镜像 CPU 版、没加 `--gpus all`，还是宿主机缺驱动（`gpu.torch_cuda` 即 `torch.cuda.is_available()`）。

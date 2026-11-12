@@ -1,19 +1,30 @@
-# GPU 覆盖文件：docker-compose.yml 的补充，把容器的 CPU 版 torch 换成 cu121 版并交出显卡。
+# GPU 覆盖文件：docker-compose.yml 的补充，交出显卡并确保镜像是 CUDA 版 torch。
 #
-#   1) 构建 CUDA 镜像（约 2.5GB 下载，只做一次）：
-#        docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
-#          -t funasr-flow:cu121 .
-#   2) 宿主机需 NVIDIA 驱动 + Container Toolkit，先验证：
-#        docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
-#   3) 启动（等价 docker run --gpus all）：
-#        docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# 前置：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。
+#   验证：docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
 #
-# 起来后 GET /api/health 的 gpu.available 应为 true；仍为 false 时看 gpu.hint。
+# 用法一（推荐，直接用发布好的 GPU 镜像，不本地构建）：
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# 用法二（从源码构建 CUDA 镜像，约 2.5GB 下载）：
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# 起来后 GET /api/health 的 gpu.available 应为 true；仍为 false 时看 gpu.hint，
+# 或者在「设置」页看显卡那一行的解释。
 name: funasr-flow
 
 services:
   funasr-flow:
-    image: funasr-flow:cu121
+    # 默认用 Docker Hub 上构建好的 GPU 镜像（torch 2.5.1+cu121）；
+    # 要换成自己的镜像：FLOW_IMAGE=my/funasr-flow:gpu docker compose ...
+    image: ${FLOW_IMAGE:-sunzroad/funasr-flow:latest-gpu}
+
+    build:
+      args:
+        # 覆盖基础文件里的 CPU 索引，从源码构建时才会用到
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu121
+
+    # docker compose 会把它翻译成 --gpus all
     deploy:
       resources:
         reservations:

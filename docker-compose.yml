@@ -12,12 +12,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: funasr-flow:latest
+      args:
+        # 默认装 CPU 版 torch；GPU 覆盖文件会把它改成 cu121
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    # 默认用 Docker Hub 上发布好的 CPU 镜像；up -d --build 则从当前源码构建并覆盖它
+    image: ${FLOW_IMAGE:-sunzroad/funasr-flow:latest}
     container_name: funasr-flow
     restart: unless-stopped
 
     ports:
-      - "8000:8000"
+      - "${FLOW_PORT:-8000}:8000"
 
     environment:
       FLOW_DATA_DIR: /data
