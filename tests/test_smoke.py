@@ -513,3 +513,48 @@ def test_hub_ms_failure_propagates(monkeypatch) -> None:
     monkeypatch.setattr(eng, "release", lambda: None)
     with pytest.raises(RuntimeError, match="boom"):
         eng.load({"model_hub": "ms", "device": "cpu"})
+
+
+# ------------------------------------------------------- 全部转写（transcribe-all）
+def test_transcribe_all_counts_and_enqueues(temp_db):
+    """只挑「没有转写结果」的 idle/failed；redo 时包含已完成的。"""
+    from backend.app.api import files as files_api
+
+    a = _add_file("/lib/a.m4a", "a.m4a")
+    b = _add_file("/lib/b.m4a", "b.m4a", status="failed")
+    c = _add_file("/lib/c.m4a", "c.m4a", status="done")
+    d = _add_file("/lib/d.m4a", "d.m4a")  # 有转写结果但状态退回 idle 的也算「已完成」，不该重跑
+    with db.tx() as conn:
+        conn.execute("UPDATE files SET duration=60 WHERE id IN (?,?,?)", (a, b, c))
+        conn.execute("UPDATE files SET duration=30 WHERE id=?", (d,))
+    _add_transcript(c)
+    _add_transcript(d)
+
+    pre = files_api.transcribe_all(files_api.TranscribeAllBody(dry_run=True))
+    assert pre["candidates"] == 2
+    assert pre["seconds"] == 120.0
+    assert pre["queued"] == 0
+    assert pre["eta_seconds"] > 0
+
+    res = files_api.transcribe_all(files_api.TranscribeAllBody())
+    assert res["queued"] == 2
+    assert len(res["job_ids"]) == 2
+
+    # 再点一次：这两条已经在队列里（status=queued），不再是候选
+    again = files_api.transcribe_all(files_api.TranscribeAllBody())
+    assert again["candidates"] == 0
+    assert again["queued"] == 0
+
+    redo = files_api.transcribe_all(files_api.TranscribeAllBody(redo=True, dry_run=True))
+    assert redo["candidates"] == 4  # 4 条都在资料库里，重跑全都要
+
+
+def test_transcribe_all_noop_when_nothing_to_do(temp_db):
+    from backend.app.api import files as files_api
+
+    f = _add_file("/lib/x.m4a", "x.m4a", status="done")
+    _add_transcript(f)
+    res = files_api.transcribe_all(files_api.TranscribeAllBody())
+    assert res["candidates"] == 0
+    assert res["queued"] == 0
+    assert res["job_ids"] == []

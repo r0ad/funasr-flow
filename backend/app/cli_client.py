@@ -171,6 +171,36 @@ def enqueue(server: str, ids: list[int], reset: bool = False) -> dict:
     return post_json(server, "/api/files/batch", {"ids": [int(i) for i in ids], "action": action})
 
 
+def transcribe_all(server: str, redo: bool = False, dry_run: bool = False) -> dict:
+    return post_json(
+        server, "/api/files/transcribe-all", {"redo": bool(redo), "dry_run": bool(dry_run)}
+    )
+
+
+def render_transcribe_all(data: dict) -> str:
+    hours = float(data.get("seconds") or 0) / 3600
+    eta = float(data.get("eta_seconds") or 0)
+    if data.get("dry_run"):
+        return (
+            f"待转写 {data.get('candidates', 0)} 条，共 {hours:.1f} 小时音频，"
+            f"预计约 {eta / 3600:.1f} 小时（加 --apply 真正入队）"
+        )
+    return (
+        f"已加入队列 {data.get('queued', 0)} 条"
+        f"（候选 {data.get('candidates', 0)} 条，跳过 {data.get('skipped', 0)} 条）"
+    )
+
+
+def _cmd_transcribe_all(args: argparse.Namespace, server: str) -> int:
+    data = transcribe_all(server, redo=args.redo, dry_run=not args.apply)
+    data["dry_run"] = not args.apply
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        print(render_transcribe_all(data))
+    return 0
+
+
 def cancel(server: str, mode: str = "queued") -> dict:
     return post_json(server, "/api/queue/cancel", query={"mode": mode})
 
@@ -616,6 +646,14 @@ def register(subparsers: Any) -> None:
     sub = add("enqueue", "把文件加入转写队列", _cmd_enqueue)
     sub.add_argument("ids", type=int, nargs="+", help="文件 ID，可多个")
     sub.add_argument("--reset", action="store_true", help="先清掉旧转写结果再重跑")
+
+    sub = add("transcribe-all", "把所有没转写的录音一次入队", _cmd_transcribe_all)
+    sub.add_argument("--redo", action="store_true", help="连已完成的也重新转写")
+    sub.add_argument(
+        "--apply",
+        action="store_true",
+        help="真正入队；不加时只估算条数与耗时（防止误触发长任务）",
+    )
 
     sub = add("cancel", "取消排队任务", _cmd_cancel)
     sub.add_argument(

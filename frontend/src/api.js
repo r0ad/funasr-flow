@@ -56,6 +56,9 @@ export const api = {
   cancelImport: () => request('/api/files/import/cancel', { method: 'POST' }),
   batch: (ids, action, options) =>
     request('/api/files/batch', { method: 'POST', body: { ids, action, options } }),
+  // 全部转写：dry_run 只返回候选数量与预计耗时，真正入队时传 {}
+  transcribeAll: (opts = {}) =>
+    request('/api/files/transcribe-all', { method: 'POST', body: opts }),
   deleteFile: (id) => request(`/api/files/${id}`, { method: 'DELETE' }),
   browse: (path) => request(`/api/browse${qs({ path })}`),
   // 上传单个音频：请求体是原始字节（后端用 raw body 收，免 multipart 依赖）。

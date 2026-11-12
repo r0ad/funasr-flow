@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..config import LIBRARY_DIR
-from ..db import get_conn, get_setting, tx
+from ..db import get_conn, get_metric, get_setting, tx
 from ..services import library
 from ..services import queue as q
 from ..services.scanner import AUDIO_EXTS
@@ -28,6 +28,13 @@ SORTS = {
 
 
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+class TranscribeAllBody(BaseModel):
+    """全部转写的参数：redo=连已完成的也重跑，dry_run=只估算不入队。"""
+
+    redo: bool = False
+    dry_run: bool = False
 
 
 def _safe_name(name: str) -> str:
@@ -164,6 +171,38 @@ def list_files(
 def library_info() -> dict:
     """资料库概况（文件数/占用）+ 当前导入进度。必须注册在 `/{file_id}` 之前，否则被它吃掉。"""
     return {"ok": True, **library.stats(), "import": library.state()}
+
+
+@router.post("/transcribe-all")
+def transcribe_all(body: TranscribeAllBody | None = None) -> dict:
+    """把所有还没转写的录音一次加入队列。
+
+    `redo=true` 时连已完成的也重跑；`dry_run=true` 只算数量与预计耗时，不入队。
+    返回里 `seconds` 是候选音频总时长，`eta_seconds` 按历史 rtf 估算。
+    """
+    body = body or TranscribeAllBody()
+    conn = get_conn()
+    if body.redo:
+        rows = conn.execute("SELECT id, duration FROM files WHERE status != 'missing'").fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT f.id, f.duration FROM files f
+               WHERE f.status IN ('idle', 'failed')
+                 AND NOT EXISTS (SELECT 1 FROM transcripts t WHERE t.file_id = f.id)"""
+        ).fetchall()
+    ids = [r["id"] for r in rows]
+    seconds = sum(float(r["duration"] or 0) for r in rows)
+    rtf = get_metric("rtf_est", 0.0) or 0.1
+    out = {
+        "ok": True,
+        "redo": body.redo,
+        "candidates": len(ids),
+        "seconds": round(seconds, 1),
+        "eta_seconds": round(seconds * rtf, 0),
+    }
+    if body.dry_run or not ids:
+        return {**out, "queued": 0, "skipped": 0, "job_ids": []}
+    return {**out, **q.enqueue(ids, None)}
 
 
 @router.get("/{file_id}")

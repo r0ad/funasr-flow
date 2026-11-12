@@ -55,6 +55,15 @@
             @input="onSearchInput"
           />
         </div>
+        <button
+          class="btn ghost"
+          :disabled="!canBulk"
+          title="把所有还没转写的录音一次性排进队列"
+          @click="transcribeAll"
+        >
+          <Icon name="zap" :size="15" />
+          全部转写
+        </button>
         <button class="btn primary" @click="openImport">
           <Icon name="folder" :size="15" />
           导入录音
@@ -311,6 +320,10 @@ const pendingText = computed(() => {
   if (q.queued) return `${q.queued} 个排队中`
   return '队列空闲'
 })
+const canBulk = computed(() => {
+  const c = store.live?.files || {}
+  return (c.idle || 0) + (c.failed || 0) > 0
+})
 
 const page = computed(() => Math.floor(offset.value / limit.value) + 1)
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
@@ -403,6 +416,25 @@ async function enqueueOne(f) {
   try {
     await api.batch([f.id], 'enqueue')
     toast(`已加入队列：${f.name}`, 'ok')
+    load()
+  } catch (e) {
+    toast(e.message, 'err')
+  }
+}
+
+async function transcribeAll() {
+  try {
+    const pre = await api.transcribeAll({ dry_run: true })
+    if (!pre.candidates) return toast('没有待转写的录音了', 'ok')
+    const audio = fmtDuration(pre.seconds)
+    const eta = pre.eta_seconds ? `，按当前速度预计 ${fmtDuration(pre.eta_seconds)}` : ''
+    const ok = confirm(
+      `把 ${pre.candidates} 条录音加入队列？\n共约 ${audio} 音频${eta}。\n\n` +
+        '入队后按文件从短到长串行转写，随时可以在排队卡片里停止。',
+    )
+    if (!ok) return
+    const res = await api.transcribeAll({})
+    toast(`已加入队列 ${res.queued} 条${res.skipped ? `，跳过 ${res.skipped} 条` : ''}`, 'ok')
     load()
   } catch (e) {
     toast(e.message, 'err')

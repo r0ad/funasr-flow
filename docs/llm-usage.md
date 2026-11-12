@@ -76,6 +76,16 @@ curl -s "$BASE/api/files?q=妈&limit=10"
 
 ## 3. 入队与等待
 
+**最省事的一条命令**（把所有还没转写的排进队列；先 `dry_run` 看工作量）：
+
+```bash
+curl -s -X POST $BASE/api/files/transcribe-all -H 'Content-Type: application/json' -d '{"dry_run": true}'
+curl -s -X POST $BASE/api/files/transcribe-all -H 'Content-Type: application/json' -d '{}'
+# 或命令行：funasr-flow api transcribe-all --server $BASE  # 加 --apply 才真入队
+```
+
+只转指定文件时再用批量接口：
+
 ```bash
 curl -s -X POST $BASE/api/files/batch -H 'Content-Type: application/json' \
      -d '{"ids":[11,23,27],"action":"enqueue"}'
@@ -187,7 +197,8 @@ curl -s "$BASE/api/export?ids=11,23,27&format=md" -o 选中录音.zip   # 多文
 funasr-flow api list --status done --json          # 文件清单
 funasr-flow api transcript 23                      # [mm:ss] 说话人：文本
 funasr-flow api transcript 23 --json                # 原始结构
-funasr-flow api enqueue 11 23 27                    # 入队
+funasr-flow api transcribe-all --apply               # 全部未转写的一次入队
+funasr-flow api enqueue 11 23 27                    # 只入队指定文件
 funasr-flow api state                               # 队列快照
 funasr-flow api search 医院 --limit 20
 funasr-flow api export 23 -f srt -o .cache/tmp/23.srt

@@ -33,6 +33,7 @@
 | GET | `/api/files/library` | 资料库概况（文件数 / 占用）+ 当前导入进度 |
 | POST | `/api/files/import/cancel` | 取消正在跑的导入任务 |
 | POST | `/api/files/batch` | 批量入队 / 重新转写 / 删除 |
+| POST | `/api/files/transcribe-all` | 把所有没转写的录音一次入队（可 `dry_run` 先估算） |
 | DELETE | `/api/files/{file_id}` | 删除记录；`purge=true` 时只删资料库里的副本 |
 | GET | `/api/transcripts/{file_id}` | 转写全文（句子 + 说话人） |
 | PATCH | `/api/transcripts/{file_id}/segments/{idx}` | 改一句的文字或簇标签 |
@@ -166,6 +167,29 @@
 
 注意：`engine` 不是设置项，选中引擎只能通过任务 `options`（见 `/api/files/batch`）；`auto_scan_minutes > 0` 时后端每 N 分钟自动导入一次 `input_dir`，`0` 表示关闭。
 `ingest_mode` 取 `copy`（默认，复制进资料库）或 `link`（同盘硬链接，省一份空间）；其它值在导入时回退 `copy`。设置页暂未暴露，需要时用 PATCH 改。
+
+### POST `/api/files/transcribe-all`
+
+把所有「还没有转写结果」的录音一次排进队列，不用先自己收集 id。
+
+```bash
+curl -s -X POST $BASE/api/files/transcribe-all -H 'Content-Type: application/json' \
+  -d '{"dry_run": true}'     # 只估算，不入队
+curl -s -X POST $BASE/api/files/transcribe-all -H 'Content-Type: application/json' -d '{}'
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `redo` | `true` 时连已完成的也重跑（默认只挑 idle/failed 且没有转写结果的） |
+| `dry_run` | `true` 只算数量与耗时，返回 `queued: 0` |
+
+```json
+{"ok": true, "redo": false, "candidates": 950, "seconds": 230082.0,
+ "eta_seconds": 97768.0, "queued": 950, "skipped": 0, "job_ids": [977, 978]}
+```
+
+- `seconds` 是候选音频总时长（依赖 `duration`，没探测完的文件算 0）；`eta_seconds` 按历史 `rtf_est` 估算。
+- 队列串行执行、按文件从短到长，长任务中途想停用 `POST /api/queue/cancel?mode=queued` 或 `mode=all`。
 
 ### GET `/api/state`
 
