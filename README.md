@@ -29,7 +29,7 @@ docker compose up -d            # 拉取现成镜像并启动（约 720MB 压缩
 端口 8000 被占用时：`FLOW_PORT=8011 docker compose up -d`，然后开 http://127.0.0.1:8011。
 日志：`docker compose logs -f funasr-flow`。
 
-### 有 NVIDIA 显卡（快 20 倍以上）
+### 有 NVIDIA 显卡（更快）
 
 一条命令就够 —— 它会拉取构建好的 CUDA 镜像，并把显卡交给容器：
 
@@ -42,6 +42,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
+
+实测同一台机器（RTX 4060 Ti）：识别本身在显卡上 rtf≈0.01，端到端还要跑「逐句声纹 + 说话人聚类」，那部分吃 CPU，整体大约比纯 CPU 快 3 倍。
 
 前提：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。先验证一句：
 `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 能打出显卡信息。
