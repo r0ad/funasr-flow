@@ -48,6 +48,21 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 前提：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。先验证一句：
 `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi` 能打出显卡信息。
 
+### 想同时跑两个（比如 CPU 一个、GPU 一个，对比效果）
+
+每个实例给不同的名字、端口和数据卷，就不会互相抢容器名和数据库：
+
+```bash
+# CPU 实例 → http://127.0.0.1:8000
+FLOW_NAME=ff-cpu FLOW_PORT=8000 docker compose -p ff-cpu up -d
+
+# GPU 实例 → http://127.0.0.1:8090
+FLOW_NAME=ff-gpu FLOW_PORT=8090 \
+docker compose -p ff-gpu -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+`-p` 不同的项目名会让 compose 自动给卷加不同前缀，所以两个实例的资料库天然分开；模型缓存也各下一份（想共用就把其中一个的 `flow-cache` 改成 `external` 卷）。
+
 起来后进「设置」页，显卡那一行应该显示你的显卡型号。**如果显示的是 CPU**，页面会直接告诉你原因（`gpu.hint`），常见三种：
 
 1. 启动时没带 GPU 覆盖文件 —— 用上面带 `-f docker-compose.gpu.yml` 的命令；

@@ -1,6 +1,12 @@
 # 本地 / 单机服务器部署（CPU 版镜像；GPU 见 docker-compose.gpu.yml）。
 #
-#   docker compose up -d --build     # 然后打开 http://127.0.0.1:8000
+#   docker compose up -d             # 拉发布镜像，然后打开 http://127.0.0.1:8000
+#   docker compose up -d --build     # 或者从当前源码构建
+#
+# 想同时跑两个实例（比如 CPU + GPU 各一个），给每个实例不同的名字/端口/数据卷：
+#   FLOW_NAME=ff-cpu FLOW_PORT=8000 docker compose -p ff-cpu up -d
+#   FLOW_NAME=ff-gpu FLOW_PORT=8090 docker compose -p ff-gpu \
+#     -f docker-compose.yml -f docker-compose.gpu.yml up -d
 #
 # 音频怎么进来：不需要挂载任何宿主机目录 —— 网页里直接拖入文件，走 HTTP 上传进资料库。
 # 数据默认放命名卷里（docker 自己管理）；想在本机文件夹里看到它，把下面 volumes 里
@@ -17,7 +23,7 @@ services:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
     # 默认用 Docker Hub 上发布好的 CPU 镜像；up -d --build 则从当前源码构建并覆盖它
     image: ${FLOW_IMAGE:-sunzroad/funasr-flow:latest}
-    container_name: funasr-flow
+    container_name: ${FLOW_NAME:-funasr-flow}
     restart: unless-stopped
 
     ports:
@@ -45,5 +51,7 @@ services:
       start_period: 90s
 
 volumes:
+  # 卷名由 compose 用项目名自动加前缀（默认 funasr-flow_flow-data）；
+  # 多实例用 `-p 项目名` 会自动得到各自独立的卷，不用手动改这里。
   flow-data:
   flow-cache:

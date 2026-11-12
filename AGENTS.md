@@ -171,6 +171,9 @@ docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 
   push `v*` tag → 追加 `:0.1.0`、`:0.1.0-gpu`；PR 只构建不推；`workflow_dispatch` 可手动补发。
   需要仓库 Secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`（Access Token，**不能用账号密码**）。
   镜像很大（CPU 2.4GB / GPU 6.6GB），job 里先清 runner 预装大件腾磁盘，并用 `type=gha` 缓存层。
+- 多实例：`container_name` 做成变量（`FLOW_NAME`），同时跑 CPU + GPU 时用 `-p <项目名>` + 不同的 `FLOW_PORT`；
+  卷名交给 compose 前缀（`<项目名>_flow-data`），**不要**给卷写固定 `name:`，否则会绕过项目前缀、
+  让老用户的数据卷失联（踩过：显式 `name: flow-data` 导致原有 `funasr-flow_flow-data` 不挂载）。
 - 容器里排查：`docker logs <name>`；GPU 是否生效看 `GET /api/health` 的 `gpu.available` 与 `gpu.hint`。
 
 ## 配置项（`DEFAULT_SETTINGS`）
