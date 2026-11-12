@@ -119,7 +119,10 @@ CPU 大约 1 分钟音频要 20–60 秒；有 GPU 会降到 1–2 秒。设置�
 Docker 默认在命名卷 `flow-data` 里；直接安装在项目的 `data/`：`data/library/` 是音频副本，`data/flow.db` 是数据库。想放在本机可见的文件夹里，把 compose 里 `- flow-data:/data` 换成 `- ./data:/data`。
 
 **能识别方言吗？**
-默认通用中文模型。设置里可切到四川话微调模型 `lukeewin01/paraformer-large-sichuan-offline`，实测对西南官话明显更准。
+默认通用中文模型。设置里可切到四川话微调模型 `lukeewin01/paraformer-large-sichuan-offline`，实测对西南官话明显更准。设置页还有多方言、一体版、英文等 8 个可选模型，带说明和体积。
+
+**模型是在线拉取吗？**
+是，第一次用到时自动下载到缓存目录，之后离线可用。默认从 ModelScope 拉；设置页「模型来源」可切 HuggingFace 或「先 ModelScope 失败再 HuggingFace」，国内访问不了 HF 时加 `HF_ENDPOINT=https://hf-mirror.com`。
 
 ## 五、更多
 

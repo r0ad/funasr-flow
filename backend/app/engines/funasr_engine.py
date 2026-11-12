@@ -54,6 +54,7 @@ class FunAsrEngine:
         self._model = None
         self._sv = None
         self._sig: tuple | None = None
+        self._hub_sig: str | None = None
         self._sv_sig: str | None = None
 
     # ------------------------------------------------------------------ 可用性
@@ -78,21 +79,21 @@ class FunAsrEngine:
             return "cpu"
         return dev
 
-    def load(self, cfg: dict) -> None:
-        sig = (
-            cfg.get("asr_model", "paraformer-zh"),
-            cfg.get("vad_model", "fsmn-vad"),
-            cfg.get("punc_model", "ct-punc"),
-            cfg.get("spk_model", "cam++"),
-            self._device(cfg),
-        )
-        if self._model is not None and sig == self._sig:
-            return
+    def _hub(self, cfg: dict) -> str:
+        """模型下载来源：ms（ModelScope，默认）/ hf（HuggingFace）。
+
+        `auto` 由 `_hub_auto()` 处理：先按 ms 试，失败再换 hf。
+        """
+        hub = str(cfg.get("model_hub") or "ms").strip().lower()
+        return "hf" if hub in {"hf", "huggingface"} else "ms"
+
+    def _hub_auto(self, cfg: dict) -> bool:
+        return str(cfg.get("model_hub") or "ms").strip().lower() == "auto"
+
+    def _build_model(self, sig: tuple, hub: str):
         from funasr import AutoModel
 
-        self.release()
-        log.info("loading funasr models %s", sig)
-        self._model = AutoModel(
+        return AutoModel(
             model=sig[0],
             vad_model=sig[1],
             punc_model=sig[2],
@@ -101,21 +102,49 @@ class FunAsrEngine:
             spk_mode="punc_segment",
             max_num_spks=15,
             device=sig[4],
+            hub=hub,
             disable_update=True,
             log_level="ERROR",
             ncpu=4,
         )
+
+    def load(self, cfg: dict) -> None:
+        hub = self._hub(cfg)
+        sig = (
+            cfg.get("asr_model", "paraformer-zh"),
+            cfg.get("vad_model", "fsmn-vad"),
+            cfg.get("punc_model", "ct-punc"),
+            cfg.get("spk_model", "cam++"),
+            self._device(cfg),
+        )
+        if self._model is not None and sig == self._sig and hub == self._hub_sig:
+            return
+
+        self.release()
+        try:
+            self._model = self._build_model(sig, hub)
+        except Exception as e:
+            # auto：ModelScope 上没有 / 网络不通时自动换 HuggingFace（前提是用户选过 auto）
+            if hub != "ms" or not self._hub_auto(cfg):
+                raise
+            log.warning("ModelScope 加载失败（%s），改试 HuggingFace", e)
+            hub = "hf"
+            self._model = self._build_model(sig, hub)
         self._sig = sig
+        self._hub_sig = hub
+        log.info("loading funasr models %s hub=%s", sig, hub)
 
     def _load_sv(self, cfg: dict) -> Any:
         spk = str(cfg.get("spk_model", "cam++"))
         dev = self._device(cfg)
-        if self._sv is not None and self._sv_sig == f"{spk}|{dev}":
+        hub = self._hub(cfg)
+        sig = f"{spk}|{dev}|{hub}"
+        if self._sv is not None and self._sv_sig == sig:
             return self._sv
         from funasr import AutoModel
 
-        self._sv = AutoModel(model=spk, device=dev, disable_update=True, log_level="ERROR")
-        self._sv_sig = f"{spk}|{dev}"
+        self._sv = AutoModel(model=spk, device=dev, hub=hub, disable_update=True, log_level="ERROR")
+        self._sv_sig = sig
         return self._sv
 
     # ------------------------------------------------------------------ 转写

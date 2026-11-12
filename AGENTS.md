@@ -181,7 +181,8 @@ docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 
 | --- | --- | --- |
 | `input_dir` | `CallRecord/` | 自动导入目录（CLI/定时导入用；浏览器导入不需要它） |
 | `device` | `cuda:0` | 无 CUDA 自动回退 CPU |
-| `asr_model` / `vad_model` / `punc_model` / `spk_model` | `paraformer-zh` / `fsmn-vad` / `ct-punc` / `cam++` | 模型别名，见 `docs/models.md` |
+| `asr_model` / `vad_model` / `punc_model` / `spk_model` | `paraformer-zh` / `fsmn-vad` / `ct-punc` / `cam++` | 模型别名，清单见 `config.MODEL_CHOICES` 与 `docs/models.md` |
+| `model_hub` | `ms` | 模型下载来源：`ms`=ModelScope（默认）/ `hf`=HuggingFace / `auto`=先 ms 失败再 hf；hf 走 `HF_ENDPOINT` 镜像 |
 | `hotwords` | 一串亲属称呼 | 空格分隔，无权重语法；只对 SeACo 系模型生效 |
 | `spk_num` | 0 | 0=自动估计人数；2=强制双人 |
 | `batch_size_s` | 300 | 单批音频秒数 |

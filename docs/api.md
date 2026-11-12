@@ -83,17 +83,23 @@
   ],
   "worker": {"thread": true, "heartbeat_age": 1.2},
   "ml": {
+    "hub": "ms",
+    "hf_endpoint": null,
     "models": {
       "asr": [
-        {"id": "paraformer-zh", "label": "Paraformer 中文通用（快，推荐）"},
-        {"id": "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch", "label": "Paraformer-large 完整版"},
-        {"id": "lukeewin01/paraformer-large-sichuan-offline", "label": "Paraformer 四川话微调（205h，方言更准）"}
+        {"id": "paraformer-zh", "label": "SeACo-Paraformer 中文通用（推荐）", "note": "支持热词；字级时间戳", "size": "约 950 MB", "tags": ["中文", "热词", "时间戳"]},
+        {"id": "lukeewin01/paraformer-large-sichuan-offline", "label": "四川话微调（205h 方言数据）", "note": "四川/重庆通话更准", "size": "约 850 MB", "tags": ["方言"]}
       ],
-      "spk": [{"id": "cam++", "label": "CAM++ 中文声纹（推荐）"}]
+      "spk": [{"id": "cam++", "label": "CAM++ 中文声纹（推荐）", "note": "192 维声纹", "size": "约 29 MB"}],
+      "punc": [{"id": "ct-punc", "label": "CT-Punc 大模型（推荐）", "note": "最准", "size": "约 1.2 GB"}],
+      "vad": [{"id": "fsmn-vad", "label": "FSMN-VAD（推荐）", "note": "16k 通用端点检测", "size": "约 4 MB"}]
     }
   }
 }
 ```
+
+`ml.hub` 是模型下载来源（`ms` / `hf` / `auto`），`ml.hf_endpoint` 是 `HF_ENDPOINT` 环境变量（没配为 `null`）；
+`ml.models` 每个分组都带 `label/note/size`，设置页直接渲染这些字段。
 
 `worker.thread` 表示**本进程**里是否有存活的内置 worker；用独立 `funasr-flow worker` 部署时它是 `false`，但 `heartbeat_age` 仍会更新。
 
@@ -140,7 +146,7 @@
     "auto_scan_minutes": 0
   },
   "defaults": {"...": "同上，来自 config.DEFAULT_SETTINGS"},
-  "models": {"asr": ["..."], "spk": ["..."]}
+  "models": {"asr": ["..."], "spk": ["..."], "punc": ["..."], "vad": ["..."]}
 }
 ```
 

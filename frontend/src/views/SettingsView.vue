@@ -107,10 +107,29 @@
             <label>识别模型</label>
             <input v-model="form.asr_model" class="input" list="asr-models" />
             <datalist id="asr-models">
-              <option v-for="m in health?.ml?.models?.asr || []" :key="m.id" :value="m.id">{{ m.label }}</option>
+              <option v-for="m in asrModels" :key="m.id" :value="m.id">{{ m.label }} · {{ m.size }}</option>
             </datalist>
-            <span class="hint">默认 Paraformer 中文；方言重的录音可换四川话微调模型。</span>
+            <span v-if="asrChoice" class="hint">
+              <b>{{ asrChoice.label }}</b> · {{ asrChoice.size }}<br />{{ asrChoice.note }}
+            </span>
+            <span v-else class="hint">自定义模型 id；ModelScope / HuggingFace 上的仓库名都可直接填。</span>
           </div>
+          <div class="field">
+            <label>模型来源</label>
+            <select v-model="form.model_hub" class="select">
+              <option value="ms">ModelScope（推荐，国内快）</option>
+              <option value="hf">HuggingFace</option>
+              <option value="auto">自动：先 ModelScope，失败再 HuggingFace</option>
+            </select>
+            <span class="hint">首次使用按来源在线下载到缓存目录，之后离线可用。</span>
+            <span v-if="form.model_hub === 'hf'" class="hint">
+              国内连不上 huggingface.co 时，启动服务前设环境变量
+              <code>HF_ENDPOINT=https://hf-mirror.com</code>。
+            </span>
+          </div>
+        </div>
+
+        <div class="form-grid">
           <div class="field">
             <label>计算设备</label>
             <select v-model="form.device" class="select">
@@ -118,6 +137,19 @@
               <option value="cpu">CPU（慢，约占 1/8 速度）</option>
             </select>
             <span class="hint">GPU 推理串行执行，这是刻意的：三模型一起吃显存。</span>
+          </div>
+          <div class="field">
+            <label>声纹模型</label>
+            <select v-model="form.spk_model" class="select">
+              <option v-for="m in spkModels" :key="m.id" :value="m.id">{{ m.label }}</option>
+              <option
+                v-if="form.spk_model && !spkModels.some((m) => m.id === form.spk_model)"
+                :value="form.spk_model"
+              >
+                {{ form.spk_model }}（自定义）
+              </option>
+            </select>
+            <span class="hint">说话人分离与声纹库都用它（192 维）。</span>
           </div>
         </div>
 
@@ -171,11 +203,10 @@
             </div>
             <div class="field">
               <label>标点</label>
-              <input v-model="form.punc_model" class="input mono" />
-            </div>
-            <div class="field">
-              <label>声纹</label>
-              <input v-model="form.spk_model" class="input mono" />
+              <input v-model="form.punc_model" class="input mono" list="punc-models" />
+              <datalist id="punc-models">
+                <option v-for="m in puncModels" :key="m.id" :value="m.id">{{ m.label }}</option>
+              </datalist>
             </div>
             <div class="field">
               <label>并发数</label>
@@ -248,6 +279,12 @@ const lib = ref(null)
 const importing = computed(() => !!store.live?.import?.running)
 const imp = computed(() => store.live?.import || null)
 const live = computed(() => store.live)
+
+// 后端 /api/health 里带的模型清单（config.MODEL_CHOICES），每条带 label/note/size
+const asrModels = computed(() => health.value?.ml?.models?.asr || [])
+const spkModels = computed(() => health.value?.ml?.models?.spk || [])
+const puncModels = computed(() => health.value?.ml?.models?.punc || [])
+const asrChoice = computed(() => asrModels.value.find((m) => m.id === form.asr_model) || null)
 
 const dirtyCount = computed(() => {
   if (!settings.value) return 0

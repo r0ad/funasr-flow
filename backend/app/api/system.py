@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config import CACHE_DIR, DEFAULT_SETTINGS, MODEL_CHOICES, ROOT
-from ..db import all_settings, get_conn, get_metric, set_setting
+from ..db import all_settings, get_conn, get_metric, get_setting, set_setting
 from ..services import library
 from ..services import queue as q
 from ..services.scanner import AUDIO_EXTS
@@ -251,7 +251,13 @@ def health() -> dict:
             "thread": bool(t and t.is_alive()),
             "heartbeat_age": round(time.time() - beat, 1) if beat else None,
         },
-        "ml": {"models": MODEL_CHOICES},
+        "ml": {
+            "models": MODEL_CHOICES,
+            # 模型从哪下载：ms=ModelScope（默认）/ hf=HuggingFace / auto=先 ms 失败再 hf
+            "hub": get_setting("model_hub") or "ms",
+            # 走 HuggingFace 时如果有镜像端点会显示出来（HF_ENDPOINT 环境变量）
+            "hf_endpoint": os.environ.get("HF_ENDPOINT") or None,
+        },
         "container": in_container(),
     }
 

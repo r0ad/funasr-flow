@@ -19,14 +19,23 @@ FunASR Flow 不做模型训练，只负责调度。所有模型都由 [FunASR](h
 
 大小是本地缓存目录的实际占用（`du` 口径，含配置文件），未缓存的模型给出的是量级估计。
 
-| 别名 / 配置值 | ModelScope id | 用途 | 大小 | License |
-| --- | --- | --- | --- | --- |
-| `paraformer-zh` | `iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch` | 中文通用 ASR，SeACo 热词，默认首选 | 954 MB | Apache License 2.0 |
-| `paraformer` | `iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch` | Paraformer-large 完整版，通用性略好、更慢 | 未缓存（同架构，约 850 MB 量级） | Apache License 2.0 |
-| `lukeewin01/paraformer-large-sichuan-offline` | 同左（ModelScope 仓库 id 即配置值） | 四川话微调 ASR，205 小时方言数据 | 852 MB | **未声明**（模型卡无 License 行） |
-| `fsmn-vad` | `iic/speech_fsmn_vad_zh-cn-16k-common-pytorch` | VAD | 4.4 MB | Apache License 2.0 |
-| `ct-punc` | `iic/punc_ct-transformer_cn-en-common-vocab471067-large` | 中文/英文标点恢复 | 1.2 GB | Apache License 2.0 |
-| `cam++` | `iic/speech_campplus_sv_zh-cn_16k-common` | 说话人验证/声纹（192 维） | 29 MB（`campplus_cn_common.bin` 28,036,335 B） | Apache License 2.0 |
+| 别名 / 配置值 | 用途 | 大小 | License |
+| --- | --- | --- | --- |
+| `paraformer-zh` | 中文通用 ASR，SeACo 热词，默认首选 | 954 MB | Apache License 2.0 |
+| `iic/speech_paraformer-large-contextual_asr_nat-zh-cn-16k-common-vocab8404` | 热词/上下文增强版，识别略慢 | 约 900 MB | Apache License 2.0 |
+| `iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch` | 基础对照版，无热词 | 约 850 MB | Apache License 2.0 |
+| `iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch` | 一体版：自带 VAD + 标点，启动更快；句子偏长 | 约 1.1 GB | Apache License 2.0 |
+| `lukeewin01/paraformer-large-sichuan-offline` | 四川话微调 ASR（205 小时方言数据） | 852 MB | **未声明**（模型卡无 License 行） |
+| `dengcunqin/speech_paraformer_large_asr_mtl-16k-common-vocab11666-pytorch` | 多方言通用（粤/闽/吴/川等），热词不生效 | 约 900 MB | Apache License 2.0 |
+| `FunAudioLLM/Fun-ASR-Nano-2512` | 7 大方言/多语种，实验性质；时间戳支持未验证 | 约 800 MB | Apache License 2.0 |
+| `paraformer-en` | 英文通用 | 约 900 MB | Apache License 2.0 |
+| `fsmn-vad` | VAD | 4.4 MB | Apache License 2.0 |
+| `ct-punc` | 中文/英文标点恢复（大，最准） | 1.2 GB | Apache License 2.0 |
+| `ct-punc-c` | 中文标点（小、快） | 约 300 MB | Apache License 2.0 |
+| `cam++` | 说话人验证/声纹（192 维） | 29 MB（`campplus_cn_common.bin` 28,036,335 B） | Apache License 2.0 |
+
+设置页的「识别模型 / 声纹模型 / 标点」下拉就是按这份清单渲染的（数据来自 `backend/app/config.py` 的
+`MODEL_CHOICES`，`/api/health` 的 `ml.models` 带出来）；配置值也可以手填清单之外的仓库 id。
 
 补充：
 
@@ -36,6 +45,35 @@ FunASR Flow 不做模型训练，只负责调度。所有模型都由 [FunASR](h
 - 声纹模型 `cam++` 的 `emb_size=192`、`fbank=80`；`file_speakers.centroid` 与 `speakers.embedding` 存的都是这个维度的 float32。
 
 ## 下载与缓存
+
+### 下载来源：ModelScope 优先，HuggingFace 兜底
+
+模型是**首次使用时在线拉取**的，之后走本地缓存、可完全断网。来源由设置项 `model_hub` 控制：
+
+| `model_hub` | 行为 | 说明 |
+| --- | --- | --- |
+| `ms`（默认） | 只走 ModelScope | 国内直连快；FunASR 的默认渠道 |
+| `hf` | 只走 HuggingFace | 部分模型（`FunAudioLLM/*` 等）首发在 HF |
+| `auto` | 先 ModelScope，报错后自动换 HuggingFace | 新模型常常一边有一边没有 |
+
+实现上就是把 `hub=` 透传给 `funasr.AutoModel(...)`（FunASR 支持 `ms`/`hf`/`openai`，取值见
+`funasr/download/download_model_from_hub.py`）；`hf` 时 HF 官方别名会映射成 `funasr/paraformer-zh`、
+`funasr/campplus` 这类 HuggingFace 仓库。
+
+国内访问不了 huggingface.co 时，用镜像端点（标准 `huggingface_hub` 环境变量，本项目原样透传）：
+
+```bash
+# Linux / macOS
+HF_ENDPOINT=https://hf-mirror.com funasr-flow serve
+# Windows PowerShell
+$env:HF_ENDPOINT = "https://hf-mirror.com"; funasr-flow serve
+# Docker
+docker run ... -e HF_ENDPOINT=https://hf-mirror.com sunzroad/funasr-flow:latest
+```
+
+`GET /api/health` 的 `ml.hub` 与 `ml.hf_endpoint` 会告诉你当前走哪边、有没有配镜像。
+
+### 缓存目录
 
 ```text
 MODELSCOPE_CACHE  → <项目根>/.cache/modelscope

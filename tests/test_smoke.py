@@ -439,3 +439,77 @@ def test_scan_unmarks_missing_when_file_returns(temp_db, tmp_path) -> None:
     scanner.scan(str(root))
     status = temp_db.get_conn().execute("SELECT status FROM files").fetchone()["status"]
     assert status == "idle"
+
+
+def test_model_choices_are_well_formed() -> None:
+    """设置页的模型下拉依赖这些字段，缺一个就会显示成空白。"""
+    from backend.app.config import MODEL_CHOICES
+
+    for group in ("asr", "spk", "punc", "vad"):
+        items = MODEL_CHOICES[group]
+        assert items, f"{group} 不能为空"
+        ids = [m["id"] for m in items]
+        assert len(ids) == len(set(ids)), f"{group} 有重复 id"
+        for m in items:
+            assert m["id"] and m["label"], f"{group} 缺 id/label: {m}"
+            assert "note" in m and "size" in m, f"{group} 缺 note/size: {m}"
+    # 默认值必须在清单里，否则设置页初始渲染就是空下拉
+    from backend.app.config import DEFAULT_SETTINGS
+
+    assert DEFAULT_SETTINGS["asr_model"] in [m["id"] for m in MODEL_CHOICES["asr"]]
+    assert DEFAULT_SETTINGS["spk_model"] in [m["id"] for m in MODEL_CHOICES["spk"]]
+    assert DEFAULT_SETTINGS["punc_model"] in [m["id"] for m in MODEL_CHOICES["punc"]]
+    assert DEFAULT_SETTINGS["vad_model"] in [m["id"] for m in MODEL_CHOICES["vad"]]
+
+
+def test_hub_normalization() -> None:
+    """model_hub 三种写法都要能落到 funasr 认的 ms/hf 上。"""
+    from backend.app.engines.funasr_engine import FunAsrEngine
+
+    eng = FunAsrEngine()
+    assert eng._hub({}) == "ms"
+    assert eng._hub({"model_hub": "MS"}) == "ms"
+    assert eng._hub({"model_hub": "modelscope"}) == "ms"
+    assert eng._hub({"model_hub": "hf"}) == "hf"
+    assert eng._hub({"model_hub": "HuggingFace"}) == "hf"
+    # auto 先按 ms 试，失败再换 hf：_hub 返回 ms，_hub_auto 为真
+    assert eng._hub({"model_hub": "auto"}) == "ms"
+    assert eng._hub_auto({"model_hub": "auto"}) is True
+    assert eng._hub_auto({"model_hub": "hf"}) is False
+
+
+def test_hub_auto_falls_back_to_hf(monkeypatch) -> None:
+    """model_hub=auto：ModelScope 失败要自动换 HuggingFace 再试一次。"""
+    from backend.app.engines.funasr_engine import FunAsrEngine
+
+    eng = FunAsrEngine()
+    calls: list[str] = []
+
+    def fake_build(sig, hub):
+        calls.append(hub)
+        if hub == "ms":
+            raise RuntimeError("modelscope 不通")
+        return object()
+
+    monkeypatch.setattr(eng, "_build_model", fake_build)
+    monkeypatch.setattr(eng, "release", lambda: None)
+    eng.load({"model_hub": "auto", "device": "cpu"})
+    assert calls == ["ms", "hf"]
+    assert eng._hub_sig == "hf"
+
+
+def test_hub_ms_failure_propagates(monkeypatch) -> None:
+    """非 auto 模式下 ModelScope 失败要原样抛出，不要偷偷换源。"""
+    import pytest
+
+    from backend.app.engines.funasr_engine import FunAsrEngine
+
+    eng = FunAsrEngine()
+
+    def fake_build(sig, hub):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(eng, "_build_model", fake_build)
+    monkeypatch.setattr(eng, "release", lambda: None)
+    with pytest.raises(RuntimeError, match="boom"):
+        eng.load({"model_hub": "ms", "device": "cpu"})
