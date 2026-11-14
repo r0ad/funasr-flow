@@ -1,6 +1,7 @@
 # 本地 / 单机服务器部署（CPU 版镜像；GPU 见 docker-compose.gpu.yml）。
 #
 #   docker compose up -d             # 拉发布镜像，然后打开 http://127.0.0.1:8000
+#   FLOW_PORT=8090 docker compose up -d   # 换端口（容器内仍是 8000）
 #   docker compose up -d --build     # 或者从当前源码构建
 #
 # 想同时跑两个实例（比如 CPU + GPU 各一个），给每个实例不同的名字/端口/数据卷：
@@ -26,6 +27,7 @@ services:
     container_name: ${FLOW_NAME:-funasr-flow}
     restart: unless-stopped
 
+    # 宿主机 ${FLOW_PORT:-8000} → 容器 8000；只监听这个映射，容器内固定 8000
     ports:
       - "${FLOW_PORT:-8000}:8000"
 

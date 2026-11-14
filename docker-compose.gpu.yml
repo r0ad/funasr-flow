@@ -3,8 +3,12 @@
 # 前置：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。
 #   验证：docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
 #
-# 用法一（推荐，直接用发布好的 GPU 镜像，不本地构建）：
+# ⚠️ 这个文件是「覆盖层」，必须和 docker-compose.yml 一起用（数据卷、环境变量、
+#    健康检查都在那边定义）：
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#    只写 -f docker-compose.gpu.yml 会起一个没有数据卷的容器，数据不会持久化。
+#
+# 用法一（推荐，直接用发布好的 GPU 镜像，不本地构建）：
 #
 # 用法二（从源码构建 CUDA 镜像，约 2.5GB 下载）：
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
@@ -18,6 +22,11 @@ services:
     # 默认用 Docker Hub 上构建好的 GPU 镜像（torch 2.5.1+cu121）；
     # 要换成自己的镜像：FLOW_IMAGE=my/funasr-flow:gpu docker compose ...
     image: ${FLOW_IMAGE:-sunzroad/funasr-flow:latest-gpu}
+
+    # 端口也在这里声明一次：单独用本文件启动时也能从 8000 访问；
+    # 与 docker-compose.yml 合并时 compose 会去重，不会重复绑定。
+    ports:
+      - "${FLOW_PORT:-8000}:8000"
 
     build:
       args:

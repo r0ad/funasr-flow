@@ -43,6 +43,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
+> `docker-compose.gpu.yml` 是**覆盖层**，一定要和 `docker-compose.yml` 一起 `-f`（数据卷、环境变量、健康检查都在基础文件里）。
+> 端口映射两个文件都写了 `"${FLOW_PORT:-8000}:8000"`，合并时 compose 会去重，只绑定一次；
+> 想换端口：`FLOW_PORT=8090 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`。
+> 核对实际生效的映射：`docker compose -f docker-compose.yml -f docker-compose.gpu.yml config | grep -A2 ports`。
+
 实测同一台机器（RTX 4060 Ti）：识别本身在显卡上 rtf≈0.01，端到端还要跑「逐句声纹 + 说话人聚类」，那部分吃 CPU，整体大约比纯 CPU 快 3 倍。
 
 前提：宿主机装了 NVIDIA 驱动 + Container Toolkit（Windows 走 WSL2 后端）。先验证一句：
