@@ -23,10 +23,10 @@ services:
     # 要换成自己的镜像：FLOW_IMAGE=my/funasr-flow:gpu docker compose ...
     image: ${FLOW_IMAGE:-sunzroad/funasr-flow:latest-gpu}
 
-    # 端口也在这里声明一次：单独用本文件启动时也能从 8000 访问；
+    # 端口也在这里声明一次：单独用本文件启动时也能从 20250 访问；
     # 与 docker-compose.yml 合并时 compose 会去重，不会重复绑定。
     ports:
-      - "${FLOW_PORT:-8000}:8000"
+      - "${FLOW_PORT:-20250}:8000"
 
     build:
       args:

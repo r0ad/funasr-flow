@@ -164,14 +164,14 @@ docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 
 
 - `ARG TORCH_INDEX_URL` 在 `runtime` stage **必须重新声明**（全局 ARG 只在 `FROM` 行可见），否则 pip 会把 `torch` 当 index-url，报 `Could not find a version that satisfies the requirement torchaudio`。
 - `Dockerfile` 的 `COPY` 必须包含 `pyproject.toml run.py README.md LICENSE llms.txt`（`readme=` 与 `license-files=["LICENSE"]` 都要在镜像里）。
-- compose：`docker-compose.yml`（命名卷 `flow-data`/`flow-cache`，端口 8000，零挂载）＋ `docker-compose.gpu.yml`（换 cu121 镜像 + `deploy.resources.reservations.devices`）。校验 `docker compose config --quiet`。
+- compose：`docker-compose.yml`（命名卷 `flow-data`/`flow-cache`，宿主机端口 `${FLOW_PORT:-20250}` → 容器 8000，零挂载）＋ `docker-compose.gpu.yml`（换 cu121 镜像 + `deploy.resources.reservations.devices`）。校验 `docker compose config --quiet`。
 - 发布：`v*` tag 触发 `.github/workflows/release.yml`（`python -m build` + `twine check` + GitHub Release）。
 - **镜像自动发布**：`.github/workflows/docker.yml` 用 matrix 同时构建 CPU + GPU 两套镜像并推 Docker Hub
   （`sunzroad/funasr-flow`，可用仓库变量 `DOCKER_IMAGE` 覆盖）。push 到默认分支 → `:latest`/`:cpu`/`:gpu`/`:latest-gpu`/`:sha-<短哈希>`；
   push `v*` tag → 追加 `:0.1.0`、`:0.1.0-gpu`；PR 只构建不推；`workflow_dispatch` 可手动补发。
   需要仓库 Secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`（Access Token，**不能用账号密码**）。
   镜像很大（CPU 2.4GB / GPU 6.6GB），job 里先清 runner 预装大件腾磁盘，并用 `type=gha` 缓存层。
-- 多实例：`container_name` 做成变量（`FLOW_NAME`），同时跑 CPU + GPU 时用 `-p <项目名>` + 不同的 `FLOW_PORT`；
+- 多实例：`container_name` 做成变量（`FLOW_NAME`），同时跑 CPU + GPU 时用 `-p <项目名>` + 不同的 `FLOW_PORT`（示例 20250 / 20251）；
   卷名交给 compose 前缀（`<项目名>_flow-data`），**不要**给卷写固定 `name:`，否则会绕过项目前缀、
   让老用户的数据卷失联（踩过：显式 `name: flow-data` 导致原有 `funasr-flow_flow-data` 不挂载）。
 - 容器里排查：`docker logs <name>`；GPU 是否生效看 `GET /api/health` 的 `gpu.available` 与 `gpu.hint`。

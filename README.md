@@ -21,12 +21,12 @@ cd funasr-flow
 docker compose up -d            # 拉取现成镜像并启动（约 720MB 压缩，第一次几分钟）
 ```
 
-等它就绪，打开 <http://127.0.0.1:8000> → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
+等它就绪，打开 <http://127.0.0.1:20250> → 点右上角「导入录音」→ **选择文件夹** → 勾选要转写的录音 → 「开始转写」。
 
 > 音频是在**浏览器里**读你电脑上的文件再上传的，Docker **不需要挂载任何目录**。
 
 想从当前源码自己构建而不是拉镜像：`docker compose up -d --build`（多等几分钟）。
-端口 8000 被占用时：`FLOW_PORT=8011 docker compose up -d`，然后开 <http://127.0.0.1:8011>。
+默认宿主机端口 **20250**；被占用时：`FLOW_PORT=20300 docker compose up -d`，然后开 <http://127.0.0.1:20300>。
 日志：`docker compose logs -f funasr-flow`。
 
 ### 有 NVIDIA 显卡（更快）
@@ -44,8 +44,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
 > `docker-compose.gpu.yml` 是**覆盖层**，一定要和 `docker-compose.yml` 一起 `-f`（数据卷、环境变量、健康检查都在基础文件里）。
-> 端口映射两个文件都写了 `"${FLOW_PORT:-8000}:8000"`，合并时 compose 会去重，只绑定一次；
-> 想换端口：`FLOW_PORT=8090 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`。
+> 端口映射两个文件都写了 `"${FLOW_PORT:-20250}:8000"`，合并时 compose 会去重，只绑定一次；
+> 想换端口：`FLOW_PORT=20300 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`。
 > 核对实际生效的映射：`docker compose -f docker-compose.yml -f docker-compose.gpu.yml config | grep -A2 ports`。
 
 实测同一台机器（RTX 4060 Ti）：识别本身在显卡上 rtf≈0.01，端到端还要跑「逐句声纹 + 说话人聚类」，那部分吃 CPU，整体大约比纯 CPU 快 3 倍。
@@ -58,11 +58,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 每个实例给不同的名字、端口和数据卷，就不会互相抢容器名和数据库：
 
 ```bash
-# CPU 实例 → http://127.0.0.1:8000
-FLOW_NAME=ff-cpu FLOW_PORT=8000 docker compose -p ff-cpu up -d
+# CPU 实例 → http://127.0.0.1:20250
+FLOW_NAME=ff-cpu FLOW_PORT=20250 docker compose -p ff-cpu up -d
 
-# GPU 实例 → http://127.0.0.1:8090
-FLOW_NAME=ff-gpu FLOW_PORT=8090 \
+# GPU 实例 → http://127.0.0.1:20251
+FLOW_NAME=ff-gpu FLOW_PORT=20251 \
 docker compose -p ff-gpu -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
@@ -81,7 +81,7 @@ docker pull sunzroad/funasr-flow:latest       # CPU 版
 docker pull sunzroad/funasr-flow:latest-gpu   # GPU 版
 
 # GPU 版必须给显卡，否则容器里 torch 看不到卡
-docker run -d --name funasr-flow --gpus all -p 8000:8000 \
+docker run -d --name funasr-flow --gpus all -p 20250:8000 \
   -v funasr-data:/data -v funasr-cache:/cache \
   sunzroad/funasr-flow:latest-gpu
 ```
@@ -133,8 +133,8 @@ CPU 大约 1 分钟音频要 20–60 秒；有 GPU 会降到 1–2 秒。设置�
 **转写结果是空的 / 显示失败？**
 0 秒或纯静音会被判失败并说明原因（`没有检测到语音`）。也确认 `ffmpeg` 可用。
 
-**8000 端口被占用？**
-`docker compose` 里把 `"8000:8000"` 改成 `"8010:8000"`，然后访问 8010；直接安装的话 `python run.py --port 8010`。
+**20250 端口被占用？**
+`FLOW_PORT=20300 docker compose up -d`（compose 默认 20250，容器内始终是 8000）；直接安装的话默认 8000，用 `python run.py --port 8000` 改。
 
 **录音和文字稿存在哪？**
 Docker 默认在命名卷 `flow-data` 里；直接安装在项目的 `data/`：`data/library/` 是音频副本，`data/flow.db` 是数据库。想放在本机可见的文件夹里，把 compose 里 `- flow-data:/data` 换成 `- ./data:/data`。
