@@ -45,6 +45,40 @@ def _iter_centers(centers: Any):
             yield i, v
 
 
+def _as_float32_numpy(x: Any) -> np.ndarray:
+    """把 torch.Tensor / list / ndarray 统一成 float32 numpy 数组。"""
+    if hasattr(x, "detach"):
+        x = x.detach().cpu().numpy()
+    return np.asarray(x, dtype=np.float32)
+
+
+def _patch_cluster_backend() -> None:
+    """修 FunASR 处理长通话时必崩的问题（幂等）。
+
+    `ClusterBackend.forward` 拿到的 X 是 `spk_embedding.cpu()` 的 torch.Tensor。
+    声纹条数 < 2048 时走 sklearn 的谱聚类（内部会自己转 numpy），所以短录音没事；
+    ≥ 2048 条时改走 UMAP+HDBSCAN，而 umap 会读 `X.dtype` 交给 numpy 判断，
+    直接抛 `TypeError: Cannot interpret 'torch.float32' as a data type`。
+    30 分钟以上的通话（语料里有一批 33–35 分钟）必然踩到。
+
+    这里把入口包一层，先转成 numpy float32 再交给原实现，三条聚类路径都能正常跑。
+    """
+    try:
+        from funasr.models.campplus.cluster_backend import ClusterBackend
+    except Exception:  # 没装 funasr / 版本没有这个类：静默跳过
+        return
+    if getattr(ClusterBackend, "_flow_np_patched", False):
+        return
+    original = ClusterBackend.forward
+
+    def forward(self, X, **params):  # noqa: N807 - 与原方法同名便于排查
+        return original(self, _as_float32_numpy(X), **params)
+
+    ClusterBackend.forward = forward
+    ClusterBackend._flow_np_patched = True
+    log.debug("已给 FunASR ClusterBackend 打 numpy 兼容补丁")
+
+
 @register
 class FunAsrEngine:
     name = "funasr"
@@ -92,6 +126,8 @@ class FunAsrEngine:
 
     def _build_model(self, sig: tuple, hub: str):
         from funasr import AutoModel
+
+        _patch_cluster_backend()
 
         return AutoModel(
             model=sig[0],
@@ -238,6 +274,12 @@ class FunAsrEngine:
             language="zh",
         )
 
+    @staticmethod
+    def _is_kwargs_error(e: TypeError) -> bool:
+        """判断 TypeError 是不是"该版本不接受这个参数"（否则不该降级重试）。"""
+        msg = str(e).lower()
+        return "unexpected keyword" in msg or "unexpected argument" in msg
+
     def _generate(self, wav_path: str, kwargs: dict[str, Any]):
         """兼容不同 FunASR 版本的参数集：逐步降级而不是直接失败。"""
         attempts = [
@@ -253,7 +295,9 @@ class FunAsrEngine:
                 item = res[0] if isinstance(res, list) else res
                 centers = item.get("spk_embedding_center") if isinstance(item, dict) else None
                 return item, centers
-            except TypeError as e:  # 参数不被该版本接受
+            except TypeError as e:  # 只有"参数不被该版本接受"才值得降级重试
+                if not self._is_kwargs_error(e):
+                    raise
                 last = e
                 continue
         raise RuntimeError(f"FunASR 推理失败: {last}")

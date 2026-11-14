@@ -601,3 +601,28 @@ def test_export_requires_ids_or_all(temp_db):
     with pytest.raises(HTTPException) as ei:
         transcripts.export(ids=None, format="txt", export_all=False, status=None)
     assert ei.value.status_code == 400
+
+def test_as_float32_numpy_accepts_torch_tensor():
+    """长通话崩溃的根因修复：torch 张量进 umap 前必须转成 numpy。"""
+    torch = pytest.importorskip("torch")
+    from backend.app.engines.funasr_engine import _as_float32_numpy
+
+    out = _as_float32_numpy(torch.tensor([[1.0, 2.0]], dtype=torch.float32))
+    assert out.dtype == np.float32
+    assert out.shape == (1, 2)
+
+
+def test_cluster_backend_patch_handles_torch_input():
+    pytest.importorskip("funasr")
+    torch = pytest.importorskip("torch")
+    from funasr.models.campplus.cluster_backend import ClusterBackend
+
+    from backend.app.engines.funasr_engine import _patch_cluster_backend
+
+    _patch_cluster_backend()
+    patched = ClusterBackend.forward
+    _patch_cluster_backend()
+    assert ClusterBackend.forward is patched, "补丁必须幂等"
+
+    labels = ClusterBackend().forward(torch.zeros(3, 192))
+    assert labels.shape == (3,)
