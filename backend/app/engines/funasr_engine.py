@@ -18,6 +18,17 @@ from .registry import register
 log = logging.getLogger(__name__)
 
 
+def _clamp_ms(start: Any, end: Any) -> tuple[int, int]:
+    """把 FunASR 给出的时间戳收拾成合法区间。
+
+    VAD 段偏移计算偶尔会给出负的起点（见过 -90ms），长音频的 end 也可能小于 start；
+    这些值写进库会让界面显示成 `-1:59` 之类的怪时间，所以在入库前夹住。
+    """
+    st = max(0, int(start or 0))
+    en = max(st, int(end or 0))
+    return st, en
+
+
 def _iter_centers(centers: Any):
     """把 FunASR 各种质心形态统一成 (标签, 向量) 迭代。
 
@@ -220,10 +231,11 @@ class FunAsrEngine:
                 if not text:
                     continue
                 spk = s.get("spk", 0)
+                start, end = _clamp_ms(s.get("start", 0), s.get("end", 0))
                 utterances.append(
                     Utterance(
-                        start_ms=int(s.get("start", 0)),
-                        end_ms=int(s.get("end", 0)),
+                        start_ms=start,
+                        end_ms=end,
                         text=text,
                         cluster=f"spk{spk}",
                     )
@@ -231,8 +243,7 @@ class FunAsrEngine:
         else:  # 退化：无说话人信息时按整段文本输出
             text = str(item.get("text") or "").strip()
             ts = item.get("timestamp") or []
-            start = int(ts[0][0]) if ts else 0
-            end = int(ts[-1][1]) if ts else 0
+            start, end = _clamp_ms(ts[0][0] if ts else 0, ts[-1][1] if ts else 0)
             if text:
                 utterances.append(Utterance(start_ms=start, end_ms=end, text=text))
 

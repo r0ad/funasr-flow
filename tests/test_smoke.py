@@ -602,6 +602,7 @@ def test_export_requires_ids_or_all(temp_db):
         transcripts.export(ids=None, format="txt", export_all=False, status=None)
     assert ei.value.status_code == 400
 
+
 def test_as_float32_numpy_accepts_torch_tensor():
     """长通话崩溃的根因修复：torch 张量进 umap 前必须转成 numpy。"""
     torch = pytest.importorskip("torch")
@@ -626,3 +627,11 @@ def test_cluster_backend_patch_handles_torch_input():
 
     labels = ClusterBackend().forward(torch.zeros(3, 192))
     assert labels.shape == (3,)
+
+
+def test_clamp_ms_handles_negative_and_inverted_ranges():
+    from backend.app.engines.funasr_engine import _clamp_ms
+
+    assert _clamp_ms(-90, 630) == (0, 630)
+    assert _clamp_ms(900, 700) == (900, 900)
+    assert _clamp_ms(None, None) == (0, 0)
