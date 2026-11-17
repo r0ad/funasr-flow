@@ -32,6 +32,26 @@ AUDIO_EXTS = {
     ".webm",
 }
 
+#: 视频容器格式。上传/导入时按「扩展名进这个集合」触发探测，真有画面才抽音轨。
+VIDEO_EXTS = {
+    ".mp4",
+    ".mkv",
+    ".mov",
+    ".avi",
+    ".m4v",
+    ".webm",
+    ".flv",
+    ".ts",
+    ".wmv",
+    ".mpg",
+    ".mpeg",
+    ".3gp",
+    ".rmvb",
+}
+
+#: 上传与目录导入接受的全部扩展名（音频 + 视频）。
+MEDIA_EXTS = AUDIO_EXTS | VIDEO_EXTS
+
 
 def _walk(root: Path) -> list[os.DirEntry]:
     out: list[os.DirEntry] = []
@@ -39,7 +59,7 @@ def _walk(root: Path) -> list[os.DirEntry]:
         if entry.is_dir(follow_symlinks=False):
             out.extend(_walk(Path(entry.path)))
         elif entry.is_file(follow_symlinks=False):
-            if Path(entry.name).suffix.lower() in AUDIO_EXTS:
+            if Path(entry.name).suffix.lower() in MEDIA_EXTS:
                 out.append(entry)
     return out
 

@@ -24,7 +24,8 @@ from pathlib import Path
 
 from ..config import LIBRARY_DIR
 from ..db import get_conn, tx
-from .scanner import AUDIO_EXTS, abs_key
+from . import media
+from .scanner import MEDIA_EXTS, VIDEO_EXTS, abs_key
 
 log = logging.getLogger(__name__)
 
@@ -94,18 +95,63 @@ def cancel_import() -> None:
     _cancel["on"] = True
 
 
+# --------------------------------------------------------------------------- 视频抽轨
+def _import_video(src: Path, st, key: str, conn) -> dict:
+    """视频：抽音轨进资料库并登记，原视频留在原地不复制。"""
+    info = media.probe(src)
+    if not info["has_audio"]:
+        raise ValueError(f"视频里没有音轨: {src.name}")
+
+    old = conn.execute(
+        "SELECT id, rel_path, size FROM files WHERE source_path=?", (key,)
+    ).fetchone()
+    if old is not None and int(old["size"]) == st.st_size and file_path(old["rel_path"]).exists():
+        return {"status": "skipped", "id": int(old["id"]), "path": old["rel_path"]}
+
+    if old is not None:
+        target = file_path(old["rel_path"])  # 源视频换过了：覆盖原来的音轨
+    else:
+        target = unique_target(media.audio_name(src.name))
+
+    media.extract(src, target)
+    size = target.stat().st_size
+    rel = abs_key(target)
+    with tx() as c:
+        if old is not None:
+            c.execute(
+                "UPDATE files SET rel_path=?, name=?, ext=?, size=?, mtime=?, status='idle', "
+                "error=NULL, updated_at=datetime('now','localtime') WHERE id=?",
+                (rel, target.name, target.suffix.lower(), size, st.st_mtime, old["id"]),
+            )
+            c.execute("DELETE FROM transcripts WHERE file_id=?", (old["id"],))
+            return {"status": "replaced", "id": int(old["id"]), "path": rel}
+
+        cur = c.execute(
+            "INSERT INTO files(rel_path, source_path, name, ext, size, mtime) VALUES(?,?,?,?,?,?)",
+            (rel, key, target.name, target.suffix.lower(), size, st.st_mtime),
+        )
+        return {"status": "added", "id": int(cur.lastrowid or 0), "path": rel}
+
+
 # --------------------------------------------------------------------------- 单个文件
 def import_one(src: Path, mode: str = "copy") -> dict:
-    """把一个音频导进资料库。返回 {status: added|skipped|replaced, id, path}。"""
+    """把一个音频/视频导进资料库。返回 {status: added|skipped|replaced, id, path}。
+
+    视频（容器里有画面）只把音轨抽成 m4a 存进资料库，原视频不复制——手机录像几百兆，
+    转写只用声音。``mode=link`` 对视频无意义（没有可链接的同构文件），自动按抽轨处理。
+    """
     src = src.expanduser()
     if not src.is_file():
         raise FileNotFoundError(str(src))
-    if src.suffix.lower() not in AUDIO_EXTS:
-        raise ValueError(f"不支持的音频格式: {src.suffix}")
+    if src.suffix.lower() not in MEDIA_EXTS:
+        raise ValueError(f"不支持的音视频格式: {src.suffix}")
 
     st = src.stat()
     key = abs_key(src)
     conn = get_conn()
+
+    if src.suffix.lower() in VIDEO_EXTS and media.is_video(src):
+        return _import_video(src, st, key, conn)
 
     if is_in_library(src):
         # 源文件本来就在资料库里（用户直接把音频拷进 data/library 后点了「导入这个目录」）：
@@ -192,7 +238,7 @@ def import_dir(root: str | Path, mode: str = "copy", should_cancel=None) -> dict
     files: list[Path] = []
     for dirpath, _dirnames, filenames in os.walk(root_path):
         for name in filenames:
-            if Path(name).suffix.lower() in AUDIO_EXTS:
+            if Path(name).suffix.lower() in MEDIA_EXTS:
                 files.append(Path(dirpath) / name)
     files.sort()
 

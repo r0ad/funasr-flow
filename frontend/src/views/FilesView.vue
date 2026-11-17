@@ -145,14 +145,15 @@
         <div class="art"><Icon name="files" :size="26" /></div>
         <h3>还没有录音</h3>
         <p class="hint">
-          选一个文件夹（或几个文件）就行，浏览器直接读你电脑上的音频并上传，服务器不需要
-          访问你的磁盘。导入的音频会复制进资料库，之后重启、换机器都不影响已有文字稿。
+          选一个文件夹（或几个文件）就行，浏览器直接读你电脑上的<b>音频/视频</b>并上传，
+          服务器不需要访问你的磁盘。视频会自动抽出音轨、不留视频本体；音频会复制进资料库，
+          之后重启、换机器都不影响已有文字稿。
         </p>
         <div class="row" style="justify-content: center; gap: 8px; margin-top: 16px">
           <button class="btn primary" @click="openImport">
             <Icon name="folder" :size="15" /> 导入录音
           </button>
-          <span class="small muted" style="align-self: center">也可以直接把音频拖进来</span>
+          <span class="small muted" style="align-self: center">也可以直接把音频/视频拖进来</span>
         </div>
       </div>
 

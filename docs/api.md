@@ -28,7 +28,7 @@
 | GET | `/api/files/{file_id}` | 单个文件详情 |
 | GET | `/api/files/{file_id}/audio` | 音频流（支持 Range） |
 | GET | `/api/browse` | 列目录（界面「导入录音」选来源用） |
-| POST | `/api/files/upload` | 上传单个音频（原始 body，落进资料库） |
+| POST | `/api/files/upload` | 上传单个音频/视频（原始 body，落进资料库；视频自动抽音轨） |
 | POST | `/api/files/scan` | 带 `dir` = 后台导入该目录；不带 `dir` = 重扫资料库 |
 | GET | `/api/files/library` | 资料库概况（文件数 / 占用）+ 当前导入进度 |
 | POST | `/api/files/import/cancel` | 取消正在跑的导入任务 |
@@ -376,7 +376,7 @@ GET /api/browse?path=H:/ws-ai/funasr-flow
 
 ### POST `/api/files/upload`
 
-上传一个音频文件：**请求体是文件的原始字节**（不是 multipart），文件名通过查询参数传。
+上传一个音频或视频文件：**请求体是文件的原始字节**（不是 multipart），文件名通过查询参数传。
 这样后端不需要 `python-multipart` 依赖，前端用 XHR 直传 `File` 对象即可拿到上传进度。
 
 ```bash
@@ -393,8 +393,12 @@ curl -X POST "http://127.0.0.1:8000/api/files/upload?name=$(python -c "import ur
 - 文件名只取 basename，Windows 非法字符、路径分隔符和控制字符会换成 `_`；重名自动加 ` (2)`。
 - **同名同大小视为同一条录音**：写完副本后发现库里已有 `name` + `size` 相同且状态不是 `missing` 的记录，
   就删掉刚写的副本，返回 `{"ok": true, "skipped": true, "file": {…}}`。界面整文件夹重传时就靠这个跳过重复项。
-- 界面上传是浏览器读本机文件（`FolderImport.vue`）：选文件夹只取**这一层**的音频，不进子文件夹；服务器端不需要挂载任何目录。
-- 扩展名不在音频白名单里返回 400 `不支持的音频格式: .exe`；空 body 返回 400 `空文件`。
+- **视频会被抽成音频**：扩展名属于 `VIDEO_EXTS`（mp4/mkv/mov/avi/m4v/webm/flv/ts/wmv/mpg/mpeg/3gp/rmvb）时，
+  用 `ffprobe` 判断里面到底有没有画面；真有时用 `ffmpeg -vn -ac 1 -ar 16000 -c:a aac` 把音轨抽成
+  **同名的 `.m4a`**（`ep1.mp4` → `ep1.m4a`），随后**删掉视频本体**——资料库里不存几百兆的片子。
+  返回的 `name` / `ext` / `size` 都是抽好的音频；视频里没有音轨返回 400。
+- 界面上传是浏览器读本机文件（`FolderImport.vue`）：选文件夹只取**这一层**的文件（音频 + 视频），不进子文件夹；服务器端不需要挂载任何目录。
+- 扩展名不在音视频白名单里返回 400 `不支持的音视频格式: .txt`；空 body 返回 400 `空文件`。
 - 上传不写 `source_path`（它只记导入来源），所以同一份来源文件之后再用「导入目录」导入时，会作为新文件再加一份。
 - 上传完不会自动入队，需要再调 `/api/files/batch`（或界面上点「开始转写」）。
 

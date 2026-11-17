@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -635,3 +636,92 @@ def test_clamp_ms_handles_negative_and_inverted_ranges():
     assert _clamp_ms(-90, 630) == (0, 630)
     assert _clamp_ms(900, 700) == (900, 900)
     assert _clamp_ms(None, None) == (0, 0)
+
+
+# --------------------------------------------------------------------------- 视频导入
+def test_safe_name_accepts_video_formats():
+    """上传时视频容器格式也要放行（后面会抽音轨）。"""
+    from backend.app.api.files import _safe_name
+
+    assert _safe_name("ep1.mp4") == "ep1.mp4"
+    assert _safe_name("D:\\videos\\妈 生日.mkv") == "妈 生日.mkv"
+    assert _safe_name("a.mov") == "a.mov"
+    with pytest.raises(HTTPException) as ei:
+        _safe_name("note.txt")
+    assert "音视频" in ei.value.detail
+
+
+def test_media_audio_name_switches_suffix():
+    from backend.app.services import media
+
+    assert media.audio_name("ep1.mp4") == "ep1.m4a"
+    assert media.audio_name("通话 记录.MOV") == "通话 记录.m4a"
+
+
+def test_upload_video_extracts_audio_and_drops_video(tmp_path, monkeypatch):
+    """视频上传：抽出 m4a 后视频本体要删掉，函数返回音频路径。"""
+    from backend.app.api import files as files_api
+    from backend.app.services import media
+
+    src = tmp_path / "ep1.mp4"
+    src.write_bytes(b"video" * 100)
+    monkeypatch.setattr(media, "is_video", lambda p: True)
+    monkeypatch.setattr(
+        media, "probe", lambda p: {"has_video": True, "has_audio": True, "duration": 50.0}
+    )
+
+    def fake_extract(s, d):
+        Path(d).write_bytes(b"audio" * 10)
+        return Path(d)
+
+    monkeypatch.setattr(media, "extract", fake_extract)
+
+    out = files_api._to_audio_if_video(src)
+    assert out.name == "ep1.m4a"
+    assert out.read_bytes() == b"audio" * 10
+    assert not src.exists()
+
+
+def test_upload_video_without_audio_is_rejected(tmp_path, monkeypatch):
+    from backend.app.api import files as files_api
+    from backend.app.services import media
+
+    src = tmp_path / "silent.mp4"
+    src.write_bytes(b"video")
+    monkeypatch.setattr(media, "is_video", lambda p: True)
+    monkeypatch.setattr(
+        media, "probe", lambda p: {"has_video": True, "has_audio": False, "duration": 10.0}
+    )
+    with pytest.raises(HTTPException) as ei:
+        files_api._to_audio_if_video(src)
+    assert ei.value.status_code == 400
+    assert not src.exists()
+
+
+def test_library_import_video_stores_audio_only(temp_db, tmp_path, monkeypatch):
+    """目录导入视频：资料库里只有抽出的 m4a，源视频原样留在原目录。"""
+    from backend.app.services import library, media
+
+    media_dir = tmp_path / "media"
+    media_dir.mkdir()
+    monkeypatch.setattr(library, "LIBRARY_DIR", tmp_path / "library")
+    monkeypatch.setattr(media, "is_video", lambda p: str(p).endswith(".mp4"))
+    monkeypatch.setattr(
+        media, "probe", lambda p: {"has_video": True, "has_audio": True, "duration": 12.0}
+    )
+
+    def fake_extract(s, d):
+        Path(d).write_bytes(b"audio-bytes")
+        return Path(d)
+
+    monkeypatch.setattr(media, "extract", fake_extract)
+
+    src = media_dir / "ep2.mp4"
+    src.write_bytes(b"video-bytes")
+    res = library.import_one(src)
+
+    assert res["status"] == "added"
+    assert res["path"].endswith("ep2.m4a")
+    assert Path(res["path"]).read_bytes() == b"audio-bytes"
+    assert src.exists()  # 源视频不动
+    assert not (tmp_path / "library" / "ep2.mp4").exists()

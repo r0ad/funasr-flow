@@ -12,7 +12,7 @@
         </button>
         <button class="btn lg" :disabled="running" @click="pickFiles">
           <Icon name="upload" :size="16" />
-          选择音频文件
+          选择文件
         </button>
         <input
           ref="folderInput"
@@ -33,12 +33,12 @@
       </div>
 
       <p class="small muted fi-note">
-        选文件夹时只导入<b>这一层</b>的音频，不会进子文件夹；音频会复制进资料库，原文件不动。
-        已有同名同大小的会跳过。
+        支持<b>音频和视频</b>（m4a/mp3/wav、mp4/mov/mkv…）：视频会自动抽出音轨存成音频，
+        视频本体不会留下。选文件夹时只导入<b>这一层</b>的文件，不会进子文件夹；已有同名同大小的会跳过。
       </p>
 
       <div v-if="entries.length" class="fi-summary">
-        <span class="badge accent">{{ entries.length }} 个音频</span>
+        <span class="badge accent">{{ entries.length }} 个文件</span>
         <span class="muted small">{{ fmtBytes(totalBytes) }}</span>
         <button v-if="!running" class="btn sm ghost" @click="reset">清空重选</button>
       </div>
@@ -100,7 +100,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const AUDIO = [
+const MEDIA = [
   '.m4a',
   '.mp3',
   '.wav',
@@ -115,8 +115,18 @@ const AUDIO = [
   '.silk',
   '.m4b',
   '.webm',
+  '.mkv',
+  '.mov',
+  '.avi',
+  '.m4v',
+  '.flv',
+  '.ts',
+  '.wmv',
+  '.mpg',
+  '.mpeg',
+  '.rmvb',
 ]
-const accept = AUDIO.join(',')
+const accept = MEDIA.join(',')
 
 const folderInput = ref(null)
 const fileInput = ref(null)
@@ -144,7 +154,7 @@ const pct = computed(() => {
 
 function isAudio(name) {
   const i = String(name).lastIndexOf('.')
-  return i >= 0 && AUDIO.includes(String(name).slice(i).toLowerCase())
+  return i >= 0 && MEDIA.includes(String(name).slice(i).toLowerCase())
 }
 
 watch(
@@ -206,7 +216,7 @@ async function pickFolder() {
         if (item.kind === 'file' && isAudio(item.name)) files.push(await item.getFile())
       }
       if (!files.length) {
-        toast('这个文件夹里没有音频文件', 'warn')
+        toast('这个文件夹里没有音频或视频文件', 'warn')
         return
       }
       addPairs(files)
@@ -223,7 +233,7 @@ function onFolderInput(ev) {
   const list = [...(ev.target.files || [])]
   // webkitRelativePath = "选中目录/文件"；只留这一层的文件，不进子目录
   const flat = list.filter((f) => (f.webkitRelativePath || '').split('/').length === 2)
-  if (!flat.length) toast('这个文件夹里没有音频文件', 'warn')
+  if (!flat.length) toast('这个文件夹里没有音频或视频文件', 'warn')
   else addPairs(flat)
   ev.target.value = ''
 }

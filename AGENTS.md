@@ -108,6 +108,9 @@ docs/                 architecture / api / models / llm-usage
   `/api/health` 的 `gpu.hint` 会说清是镜像 CPU 版、没加 `--gpus all`，还是宿主机缺驱动（`gpu.torch_cuda` 即 `torch.cuda.is_available()`）。
 - **搜索**：FTS5 `trigram` 分词，查询词 < 3 字必须走 LIKE 回退（`api/transcripts.py`），不要改成分词器。
 - **导出文件名**：中文文件名必须用 RFC 5987 `filename*=UTF-8''…`，`latin-1` 会乱码。
+- **视频要抽轨、不存视频本体**：上传/导入的扩展名命中 `VIDEO_EXTS` 时，用 `services/media.py` 的
+  `probe()` 判断是否真有画面，有就用 `extract()` 抽成 16k 单声道 m4a（`ep1.mp4 → ep1.m4a`）并删掉视频；
+  `.mp4/.webm/.3gp` 既可能是纯音频也可能是视频，**只信 ffprobe 不看扩展名**。
 
 ## 代码风格
 

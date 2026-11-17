@@ -11,9 +11,9 @@ from pydantic import BaseModel
 
 from ..config import LIBRARY_DIR
 from ..db import get_conn, get_metric, get_setting, tx
-from ..services import library
+from ..services import library, media
 from ..services import queue as q
-from ..services.scanner import AUDIO_EXTS
+from ..services.scanner import MEDIA_EXTS, VIDEO_EXTS
 from .deps import file_dict, resolve_audio, speaker_color, stream_audio
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -38,13 +38,29 @@ class TranscribeAllBody(BaseModel):
 
 
 def _safe_name(name: str) -> str:
-    """只留文件名本身，压掉路径分隔符和 Windows 非法字符。"""
+    """只留文件名本身，压掉路径分隔符和 Windows 非法字符。
+
+    音频和视频都收：视频会在后面抽出音轨，原视频不留在资料库里。
+    """
     base = Path(str(name).replace("\\", "/")).name
     base = _BAD_CHARS.sub("_", base).strip(" .") or "录音"
     stem, ext = Path(base).stem, Path(base).suffix.lower()
-    if ext not in AUDIO_EXTS:
-        raise HTTPException(400, f"不支持的音频格式: {ext or '（无扩展名）'}")
+    if ext not in MEDIA_EXTS:
+        raise HTTPException(400, f"不支持的音视频格式: {ext or '（无扩展名）'}")
     return f"{stem[:80]}{ext}"
+
+
+def _to_audio_if_video(target: Path) -> Path:
+    """视频 → 抽成同目录的管理音轨（m4a），并删掉视频本体；音频原样返回。"""
+    if target.suffix.lower() not in VIDEO_EXTS or not media.is_video(target):
+        return target
+    info = media.probe(target)
+    if not info["has_audio"]:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, "视频里没有音轨，无法转写")
+    audio = media.extract(target, target.with_name(media.audio_name(target.name)))
+    target.unlink(missing_ok=True)
+    return audio
 
 
 @router.post("/upload")
@@ -71,6 +87,12 @@ async def upload(request: Request, name: str = Query(..., description="原始文
     if size == 0:
         target.unlink(missing_ok=True)
         raise HTTPException(400, "空文件")
+
+    # 视频：抽出音轨后只留音频（原视频删除，资料库里不存几百兆的片子）
+    if target.suffix.lower() in VIDEO_EXTS:
+        target = _to_audio_if_video(target)
+        size = target.stat().st_size
+        filename = target.name
 
     # 同名同大小视为同一条录音：丢掉刚写的副本，直接跳过（浏览器整文件夹重传时常见）
     dup = (
