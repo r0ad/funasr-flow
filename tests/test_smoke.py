@@ -661,10 +661,11 @@ def test_media_audio_name_switches_suffix():
 def test_upload_video_extracts_audio_and_drops_video(tmp_path, monkeypatch):
     """视频上传：抽出 m4a 后视频本体要删掉，函数返回音频路径。"""
     from backend.app.api import files as files_api
-    from backend.app.services import media
+    from backend.app.services import library, media
 
     src = tmp_path / "ep1.mp4"
     src.write_bytes(b"video" * 100)
+    monkeypatch.setattr(library, "LIBRARY_DIR", tmp_path / "library")
     monkeypatch.setattr(media, "is_video", lambda p: True)
     monkeypatch.setattr(
         media, "probe", lambda p: {"has_video": True, "has_audio": True, "duration": 50.0}

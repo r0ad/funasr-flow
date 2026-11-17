@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import time
 from pathlib import Path
 
@@ -58,9 +59,31 @@ def _to_audio_if_video(target: Path) -> Path:
     if not info["has_audio"]:
         target.unlink(missing_ok=True)
         raise HTTPException(400, "视频里没有音轨，无法转写")
-    audio = media.extract(target, target.with_name(media.audio_name(target.name)))
+    # 目标名要避开已有文件：`ep1.mp4` 抽出的 `ep1.m4a` 可能已经存在（音频直接传过）
+    audio = media.extract(target, library.unique_target(media.audio_name(target.name)))
     target.unlink(missing_ok=True)
     return audio
+
+
+def _dup_by_stem(stem: str, size: int):
+    """视频抽轨后的查重：同一段片子重传时，抽出来的音频名字会被加上 `` (2)``/`` (3)``。
+
+    所以不能只按文件名比，还要接受 ``<stem> (n).m4a`` 这种形态；大小相等基本可以认定是同一段。
+    """
+    rows = (
+        get_conn()
+        .execute(
+            "SELECT * FROM files WHERE size=? AND ext='.m4a' AND status != 'missing' ORDER BY id",
+            (size,),
+        )
+        .fetchall()
+    )
+    pattern = re.compile(re.escape(stem) + r" \(\d+\)")
+    for row in rows:
+        name_stem = Path(row["name"]).stem
+        if name_stem == stem or pattern.fullmatch(name_stem):
+            return row
+    return None
 
 
 @router.post("/upload")
@@ -90,9 +113,23 @@ async def upload(request: Request, name: str = Query(..., description="原始文
 
     # 视频：抽出音轨后只留音频（原视频删除，资料库里不存几百兆的片子）
     if target.suffix.lower() in VIDEO_EXTS:
+        stem = Path(filename).stem
         target = _to_audio_if_video(target)
         size = target.stat().st_size
         filename = target.name
+        dup_video = _dup_by_stem(stem, size)
+        if dup_video is not None:
+            target.unlink(missing_ok=True)
+            has_tr = bool(
+                get_conn()
+                .execute("SELECT 1 FROM transcripts WHERE file_id=? LIMIT 1", (dup_video["id"],))
+                .fetchone()
+            )
+            return {
+                "ok": True,
+                "skipped": True,
+                "file": file_dict(dup_video, has_transcript=has_tr),
+            }
 
     # 同名同大小视为同一条录音：丢掉刚写的副本，直接跳过（浏览器整文件夹重传时常见）
     dup = (
@@ -114,12 +151,25 @@ async def upload(request: Request, name: str = Query(..., description="原始文
 
     rel = str(target.resolve())
     now = time.time()
-    with tx() as c:
-        cur = c.execute(
-            "INSERT INTO files(rel_path, name, ext, size, mtime) VALUES(?,?,?,?,?)",
-            (rel, target.name, target.suffix.lower(), size, now),
+    try:
+        with tx() as c:
+            cur = c.execute(
+                "INSERT INTO files(rel_path, name, ext, size, mtime) VALUES(?,?,?,?,?)",
+                (rel, target.name, target.suffix.lower(), size, now),
+            )
+            fid = int(cur.lastrowid or 0)
+    except sqlite3.IntegrityError:
+        # 同一个资料库路径已经被别的记录占着（并发上传同一个名字）：丢掉新副本，按已存在处理
+        target.unlink(missing_ok=True)
+        row = get_conn().execute("SELECT * FROM files WHERE rel_path=?", (rel,)).fetchone()
+        if row is None:
+            raise
+        has_tr = bool(
+            get_conn()
+            .execute("SELECT 1 FROM transcripts WHERE file_id=? LIMIT 1", (row["id"],))
+            .fetchone()
         )
-        fid = int(cur.lastrowid or 0)
+        return {"ok": True, "skipped": True, "file": file_dict(row, has_transcript=has_tr)}
     row = get_conn().execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
     return {
         "ok": True,
